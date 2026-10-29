@@ -1,7 +1,11 @@
 @echo off
 cd /d "%~dp0"
+if exist "RobloxMulti.exe" (
+    start "" "RobloxMulti.exe"
+    exit /b
+)
 if not exist "RobloxMulti.ps1" goto manque
-start "" powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0RobloxMulti.ps1"
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%~dp0RobloxMulti.ps1"
 exit /b
 
 :manque

@@ -1,4 +1,4 @@
-1.1.0
-- Nouveau bouton "Arrière-plan" : le launcher passe dans la zone de notification (flèche ^)
-- Nouveau logo
-- La fenêtre noire du terminal ne s'affiche plus
+1.2.0
+- Le terminal PowerShell ne s'affiche plus du tout (même sur Windows 11)
+- Ton logo remplace l'icône PowerShell dans la barre des tâches
+- Nouveau : RobloxMulti.exe avec le logo, créé automatiquement à côté du script

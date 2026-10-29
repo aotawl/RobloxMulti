@@ -4,6 +4,22 @@
 #   CHIFFRÉE avec Windows (DPAPI) et sert à lancer Roblox directement.
 # Aucun mot de passe n'est stocké. Rien n'est envoyé ailleurs que sur roblox.com.
 
+# ------------------------------------------------------------ démarrage invisible
+# Si on a été lancé avec une fenêtre de terminal (le .bat, clic droit > Exécuter avec PowerShell,
+# Terminal Windows sur Windows 11...), on se relance SANS aucune console puis on quitte.
+function Start-SelfHidden {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = (Get-Process -Id $PID).Path
+    $psi.Arguments = "-NoProfile -STA -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true          # pas de console du tout (même avec Terminal Windows)
+    $psi.EnvironmentVariables['RML_HIDDEN'] = '1'
+    [void][System.Diagnostics.Process]::Start($psi)
+}
+if ($env:RML_HIDDEN -ne '1' -and $PSCommandPath) {
+    try { Start-SelfHidden; exit } catch {}
+}
+
 try {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
@@ -18,12 +34,15 @@ try {
 [System.Windows.Forms.Application]::EnableVisualStyles()
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
-# Cache la fenêtre noire du terminal (si l'appli a été lancée sans le .bat)
+# Cache la console si jamais il en reste une, et donne à l'appli sa propre identité
+# dans la barre des tâches (sinon Windows la range sous l'icône de PowerShell)
 try {
     Add-Type -Namespace RML -Name Win -MemberDefinition @'
 [DllImport("kernel32.dll")] public static extern System.IntPtr GetConsoleWindow();
 [DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
+[DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
 '@
+    [void][RML.Win]::SetCurrentProcessExplicitAppUserModelID('aotawl.RobloxMulti')
     $consoleHwnd = [RML.Win]::GetConsoleWindow()
     if ($consoleHwnd -ne [System.IntPtr]::Zero) { [void][RML.Win]::ShowWindow($consoleHwnd, 0) }
 } catch {}
@@ -39,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '1.1.0'
+$AppVersion = '1.2.0'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -2107,8 +2126,57 @@ function Install-Update($remote) {
 
     [void](Show-Msg "Mis à jour en v$remote ! Le launcher redémarre." 'Mise à jour')
     $script:updating = $true
-    Start-Process powershell.exe -ArgumentList @('-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$self`"")
+    Start-SelfHidden
     $form.Close()
+}
+
+# ------------------------------------------------------------ RobloxMulti.exe (avec le logo)
+# Crée à côté du script un petit .exe qui lance le launcher sans aucune fenêtre de terminal.
+function Build-LauncherExe {
+    if (-not $PSCommandPath) { return }
+    $dir = Split-Path -Parent $PSCommandPath
+    $exe = Join-Path $dir 'RobloxMulti.exe'
+    $stamp = Join-Path $DataDir 'exe_version.txt'
+    $exeVersion = '2'   # à augmenter si le code de l'exe ou le logo change
+    if ((Test-Path -LiteralPath $exe) -and (Test-Path -LiteralPath $stamp) -and
+        ((Get-Content -LiteralPath $stamp -Raw).Trim() -eq $exeVersion)) { return }
+
+    if (-not (Test-Path -LiteralPath $DataDir)) { New-Item -ItemType Directory -Path $DataDir -Force | Out-Null }
+    $ico = Join-Path $DataDir 'icon.ico'
+    [System.IO.File]::WriteAllBytes($ico, [Convert]::FromBase64String(($AppIconBase64 -replace '\s', '')))
+
+    $code = @'
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Windows.Forms;
+static class RobloxMultiExe {
+    [STAThread]
+    static void Main() {
+        string ps1 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "RobloxMulti.ps1");
+        if (!File.Exists(ps1)) {
+            MessageBox.Show("RobloxMulti.ps1 est introuvable.\nGarde RobloxMulti.exe dans le meme dossier que RobloxMulti.ps1.", "Roblox Multi Launcher");
+            return;
+        }
+        string ps = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
+        ProcessStartInfo psi = new ProcessStartInfo(ps, "-NoProfile -STA -ExecutionPolicy Bypass -File \"" + ps1 + "\"");
+        psi.UseShellExecute = false;
+        psi.CreateNoWindow = true;
+        psi.EnvironmentVariables["RML_HIDDEN"] = "1";
+        Process.Start(psi);
+    }
+}
+'@
+    $cp = New-Object System.CodeDom.Compiler.CompilerParameters
+    $cp.GenerateExecutable = $true
+    $cp.OutputAssembly = $exe
+    $cp.CompilerOptions = "/target:winexe /win32icon:`"$ico`""
+    [void]$cp.ReferencedAssemblies.Add('System.dll')
+    [void]$cp.ReferencedAssemblies.Add('System.Windows.Forms.dll')
+    $res = (New-Object Microsoft.CSharp.CSharpCodeProvider).CompileAssemblyFromSource($cp, $code)
+    if (-not $res.Errors.HasErrors -and (Test-Path -LiteralPath $exe)) {
+        Set-Content -LiteralPath $stamp -Value $exeVersion
+    }
 }
 
 $lnkUpdate.Add_LinkClicked({ try { Check-Update $true } catch { Show-Error $_ } })
@@ -2159,6 +2227,7 @@ $form.Add_Shown({
         Update-Status
         Invoke-Toggle   # active direct au lancement
         $timer.Start()
+        try { Build-LauncherExe } catch {}   # silencieux : si ça rate, le .bat marche toujours
     } catch { Show-Error $_ }
 })
 
