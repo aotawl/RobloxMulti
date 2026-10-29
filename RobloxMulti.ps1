@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '1.2.0'
+$AppVersion = '1.3.0'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -1804,6 +1804,7 @@ $miOpen.Font = New-Object System.Drawing.Font($miOpen.Font, [System.Drawing.Font
 $miMulti  = New-Object System.Windows.Forms.ToolStripMenuItem('Multi-instance activé')
 [void]$trayMenu.Items.Add($miMulti)
 $miKill   = $trayMenu.Items.Add('Fermer tous les Roblox')
+$miShort  = $trayMenu.Items.Add('Raccourcis (Bureau, menu Démarrer, barre des tâches)...')
 [void]$trayMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 $miQuit   = $trayMenu.Items.Add('Quitter')
 $tray.ContextMenuStrip = $trayMenu
@@ -1899,8 +1900,14 @@ $form.Controls.Add($lblHelp)
 
 $lnkUpdate = New-Object System.Windows.Forms.LinkLabel
 $lnkUpdate.Text = "v$AppVersion  -  Vérifier les mises à jour"
-$lnkUpdate.SetBounds(14, 515, 430, 20)
+$lnkUpdate.SetBounds(14, 515, 280, 20)
 $form.Controls.Add($lnkUpdate)
+
+$lnkShort = New-Object System.Windows.Forms.LinkLabel
+$lnkShort.Text = 'Raccourcis / épingler'
+$lnkShort.TextAlign = 'TopRight'
+$lnkShort.SetBounds(300, 515, 141, 20)
+$form.Controls.Add($lnkShort)
 
 # ============================================================ logique UI
 function Update-Status {
@@ -2214,6 +2221,226 @@ $miKill.Add_Click({
 $miQuit.Add_Click({ $form.Close() })
 $trayMenu.Add_Opening({ $miMulti.Checked = (Test-Active) })
 
+# ------------------------------------------------------------ raccourcis & épinglage
+$AppId        = 'aotawl.RobloxMulti'
+$ShortcutName = 'Roblox Multi Launcher.lnk'
+
+# Petit module Windows (COM) pour : créer des raccourcis avec la bonne identité,
+# et rendre "Épingler à la barre des tâches" possible depuis la fenêtre ouverte.
+function Initialize-ShellHelper {
+    if ('RML.Shell' -as [type]) { return $true }
+    try {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+namespace RML {
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    public struct PropKey { public Guid fmtid; public uint pid; public PropKey(Guid g, uint p) { fmtid = g; pid = p; } }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct PropVar {
+        [FieldOffset(0)] public ushort vt;
+        [FieldOffset(8)] public IntPtr p;
+        [FieldOffset(8)] public long pad;
+    }
+
+    [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IPropertyStore {
+        void GetCount(out uint c);
+        void GetAt(uint i, out PropKey k);
+        void GetValue(ref PropKey k, out PropVar v);
+        void SetValue(ref PropKey k, ref PropVar v);
+        void Commit();
+    }
+
+    [ComImport, Guid("000214F9-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IShellLinkW {
+        void GetPath(IntPtr a, int b, IntPtr c, int d);
+        void GetIDList(out IntPtr p);
+        void SetIDList(IntPtr p);
+        void GetDescription(IntPtr a, int b);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string s);
+        void GetWorkingDirectory(IntPtr a, int b);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string s);
+        void GetArguments(IntPtr a, int b);
+        void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string s);
+        void GetHotkey(out short h);
+        void SetHotkey(short h);
+        void GetShowCmd(out int c);
+        void SetShowCmd(int c);
+        void GetIconLocation(IntPtr a, int b, out int i);
+        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string s, int i);
+        void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string s, int r);
+        void Resolve(IntPtr h, int f);
+        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string s);
+    }
+
+    [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+    public class ShellLink { }
+
+    public static class Shell {
+        static readonly Guid AUM = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
+        const uint PID_RELAUNCH_CMD = 2, PID_RELAUNCH_ICON = 3, PID_RELAUNCH_NAME = 4, PID_ID = 5;
+
+        [DllImport("shell32.dll")]
+        static extern int SHGetPropertyStoreForWindow(IntPtr hwnd, ref Guid iid, out IPropertyStore store);
+
+        static void Set(IPropertyStore s, uint pid, string value) {
+            PropKey k = new PropKey(AUM, pid);
+            PropVar v = new PropVar();
+            v.vt = 31; // VT_LPWSTR
+            v.p = Marshal.StringToCoTaskMemUni(value);
+            try { s.SetValue(ref k, ref v); } finally { Marshal.FreeCoTaskMem(v.p); }
+        }
+
+        // Rend la fenêtre épinglable : l'épingle lancera l'exe, avec le bon nom et le bon logo
+        public static void SetWindowRelaunch(IntPtr hwnd, string appId, string exe, string name, string icon) {
+            Guid iid = typeof(IPropertyStore).GUID;
+            IPropertyStore s;
+            Marshal.ThrowExceptionForHR(SHGetPropertyStoreForWindow(hwnd, ref iid, out s));
+            try {
+                Set(s, PID_ID, appId);
+                Set(s, PID_RELAUNCH_CMD, "\"" + exe + "\"");
+                Set(s, PID_RELAUNCH_NAME, name);
+                Set(s, PID_RELAUNCH_ICON, icon + ",0");
+            } finally { Marshal.ReleaseComObject(s); }
+        }
+
+        public static void CreateShortcut(string lnk, string target, string workDir, string icon, string desc, string appId) {
+            IShellLinkW link = (IShellLinkW)new ShellLink();
+            try {
+                link.SetPath(target);
+                link.SetWorkingDirectory(workDir);
+                link.SetIconLocation(icon, 0);
+                link.SetDescription(desc);
+                IPropertyStore s = (IPropertyStore)link;
+                Set(s, PID_ID, appId);
+                s.Commit();
+                ((IPersistFile)link).Save(lnk, true);
+            } finally { Marshal.ReleaseComObject(link); }
+        }
+    }
+}
+'@
+        return $true
+    } catch { return $false }
+}
+
+function Get-ExePath {
+    if (-not $PSCommandPath) { return $null }
+    $exe = Join-Path (Split-Path -Parent $PSCommandPath) 'RobloxMulti.exe'
+    if (Test-Path -LiteralPath $exe) { return $exe }
+    return $null
+}
+
+function Set-TaskbarIdentity {
+    $exe = Get-ExePath
+    if (-not $exe -or -not (Initialize-ShellHelper)) { return }
+    try { [RML.Shell]::SetWindowRelaunch($form.Handle, $AppId, $exe, 'Roblox Multi Launcher', $exe) } catch {}
+}
+
+function New-AppShortcut($folder) {
+    $exe = Get-ExePath
+    $lnk = Join-Path $folder $ShortcutName
+    [RML.Shell]::CreateShortcut($lnk, $exe, (Split-Path -Parent $exe), $exe, 'Lance plusieurs Roblox avec plusieurs comptes', $AppId)
+    return $lnk
+}
+
+function Show-ShortcutDialog {
+    $exe = Get-ExePath
+    if (-not $exe) {
+        [void](Show-Msg "RobloxMulti.exe n'a pas pu être créé (ton antivirus l'a peut-être bloqué), donc pas de raccourci possible pour l'instant.`r`n`r`nTu peux continuer avec Lancer RobloxMulti.bat." 'Raccourcis' 'OK' 'Warning')
+        return
+    }
+    if (-not (Initialize-ShellHelper)) {
+        [void](Show-Msg "Impossible de créer les raccourcis sur ce PC." 'Raccourcis' 'OK' 'Warning'); return
+    }
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    $startMn = [Environment]::GetFolderPath('Programs')
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = 'Où veux-tu mettre le launcher ?'
+    $dlg.ClientSize = New-Object System.Drawing.Size(360, 200)
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.MaximizeBox = $false; $dlg.MinimizeBox = $false
+    $dlg.StartPosition = 'CenterParent'
+    $dlg.Font = $form.Font
+    if ($script:appIcon) { $dlg.Icon = $script:appIcon }
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = 'Coche ce que tu veux (tu pourras changer plus tard) :'
+    $lbl.SetBounds(15, 12, 330, 20)
+    $dlg.Controls.Add($lbl)
+
+    $cbDesk = New-Object System.Windows.Forms.CheckBox
+    $cbDesk.Text = 'Raccourci sur le Bureau'
+    $cbDesk.SetBounds(20, 40, 320, 24)
+    $cbDesk.Checked = $true
+    $dlg.Controls.Add($cbDesk)
+
+    $cbStart = New-Object System.Windows.Forms.CheckBox
+    $cbStart.Text = 'Raccourci dans le menu Démarrer'
+    $cbStart.SetBounds(20, 68, 320, 24)
+    $cbStart.Checked = $true
+    $dlg.Controls.Add($cbStart)
+
+    $cbPin = New-Object System.Windows.Forms.CheckBox
+    $cbPin.Text = 'Épingler à la barre des tâches'
+    $cbPin.SetBounds(20, 96, 320, 24)
+    $cbPin.Checked = $true
+    $dlg.Controls.Add($cbPin)
+
+    $ok = New-Object System.Windows.Forms.Button
+    $ok.Text = 'Valider'
+    $ok.DialogResult = 'OK'
+    $ok.SetBounds(150, 150, 95, 30)
+    $dlg.Controls.Add($ok)
+    $dlg.AcceptButton = $ok
+
+    $later = New-Object System.Windows.Forms.Button
+    $later.Text = 'Plus tard'
+    $later.DialogResult = 'Cancel'
+    $later.SetBounds(252, 150, 95, 30)
+    $dlg.Controls.Add($later)
+    $dlg.CancelButton = $later
+
+    if ($form.Visible) { $res = $dlg.ShowDialog($form) } else { $res = $dlg.ShowDialog() }
+    if ($res -ne 'OK') { $dlg.Dispose(); return }
+    $wantDesk = $cbDesk.Checked; $wantStart = $cbStart.Checked; $wantPin = $cbPin.Checked
+    $dlg.Dispose()
+
+    $done = @()
+    try {
+        if ($wantDesk)  { [void](New-AppShortcut $desktop); $done += 'Bureau' }
+        if ($wantStart) { [void](New-AppShortcut $startMn); $done += 'menu Démarrer' }
+    } catch {
+        [void](Show-Msg "Erreur pendant la création des raccourcis : $($_.Exception.Message)" 'Raccourcis' 'OK' 'Warning')
+    }
+
+    $msg = ''
+    if ($done.Count -gt 0) { $msg = "Raccourci créé : $($done -join ' + ')." }
+    if ($wantPin) {
+        if (-not $form.Visible) { Show-FromTray }
+        if ($msg) { $msg += "`r`n`r`n" }
+        $msg += "Pour la barre des tâches, Windows interdit aux programmes de s'épingler eux-mêmes, il faut un clic :`r`n`r`n" +
+                "Clic droit sur l'icône du launcher dans la barre des tâches (en bas), puis « Épingler à la barre des tâches ».`r`n`r`n" +
+                "La prochaine fois, il suffira de cliquer dessus pour lancer le launcher."
+    }
+    if ($msg) { [void](Show-Msg $msg 'Raccourcis') }
+}
+
+function Invoke-FirstRunShortcuts {
+    $flag = Join-Path $DataDir 'shortcuts_asked.txt'
+    if (Test-Path -LiteralPath $flag) { return }
+    if (-not (Get-ExePath)) { return }   # on attend que l'exe existe
+    Set-Content -LiteralPath $flag -Value (Get-Date -Format s)
+    Show-ShortcutDialog
+}
+
+$lnkShort.Add_LinkClicked({ try { Show-ShortcutDialog } catch { Show-Error $_ } })
+$miShort.Add_Click({ try { Show-ShortcutDialog } catch { Show-Error $_ } })
+
 $form.Add_Shown({
     try {
         Check-Update $false   # vérif silencieuse au démarrage
@@ -2228,6 +2455,8 @@ $form.Add_Shown({
         Invoke-Toggle   # active direct au lancement
         $timer.Start()
         try { Build-LauncherExe } catch {}   # silencieux : si ça rate, le .bat marche toujours
+        try { Set-TaskbarIdentity } catch {} # rend "Épingler à la barre des tâches" possible
+        Invoke-FirstRunShortcuts             # 1er lancement : propose Bureau / Démarrer / barre des tâches
     } catch { Show-Error $_ }
 })
 

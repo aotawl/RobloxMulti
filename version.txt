@@ -1,4 +1,4 @@
-1.2.0
-- Le terminal PowerShell ne s'affiche plus du tout (même sur Windows 11)
-- Ton logo remplace l'icône PowerShell dans la barre des tâches
-- Nouveau : RobloxMulti.exe avec le logo, créé automatiquement à côté du script
+1.3.0
+- Au premier lancement, le launcher propose de créer des raccourcis (Bureau, menu Démarrer) et de l'épingler à la barre des tâches
+- Option "Raccourcis / épingler" en bas de la fenêtre et dans le menu de l'icône ^
+- L'icône épinglée et la fenêtre ouverte sont maintenant regroupées avec ton logo
