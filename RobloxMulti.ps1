@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '1.3.0'
+$AppVersion = '1.3.1'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -2286,6 +2286,12 @@ namespace RML {
         [DllImport("shell32.dll")]
         static extern int SHGetPropertyStoreForWindow(IntPtr hwnd, ref Guid iid, out IPropertyStore store);
 
+        [DllImport("shell32.dll")]
+        static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+
+        // Demande à Windows de redessiner les icônes (sinon il garde l'ancienne en cache)
+        public static void RefreshIcons() { SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero); }
+
         static void Set(IPropertyStore s, uint pid, string value) {
             PropKey k = new PropKey(AUM, pid);
             PropVar v = new PropVar();
@@ -2334,17 +2340,53 @@ function Get-ExePath {
     return $null
 }
 
+# Le logo est rangé dans AppData : cet endroit ne bouge jamais, même si tu déplaces le launcher
+function Get-IconFile {
+    $ico = Join-Path $DataDir 'icon.ico'
+    $bytes = [Convert]::FromBase64String(($AppIconBase64 -replace '\s', ''))
+    $same = $false
+    if (Test-Path -LiteralPath $ico) { $same = ((Get-Item -LiteralPath $ico).Length -eq $bytes.Length) }
+    if (-not $same) {
+        if (-not (Test-Path -LiteralPath $DataDir)) { New-Item -ItemType Directory -Path $DataDir -Force | Out-Null }
+        [System.IO.File]::WriteAllBytes($ico, $bytes)
+    }
+    return $ico
+}
+
 function Set-TaskbarIdentity {
     $exe = Get-ExePath
     if (-not $exe -or -not (Initialize-ShellHelper)) { return }
-    try { [RML.Shell]::SetWindowRelaunch($form.Handle, $AppId, $exe, 'Roblox Multi Launcher', $exe) } catch {}
+    try { [RML.Shell]::SetWindowRelaunch($form.Handle, $AppId, $exe, 'Roblox Multi Launcher', (Get-IconFile)) } catch {}
 }
 
 function New-AppShortcut($folder) {
     $exe = Get-ExePath
     $lnk = Join-Path $folder $ShortcutName
-    [RML.Shell]::CreateShortcut($lnk, $exe, (Split-Path -Parent $exe), $exe, 'Lance plusieurs Roblox avec plusieurs comptes', $AppId)
+    [RML.Shell]::CreateShortcut($lnk, $exe, (Split-Path -Parent $exe), (Get-IconFile), 'Lance plusieurs Roblox avec plusieurs comptes', $AppId)
     return $lnk
+}
+
+# Dossiers où le launcher a pu mettre un raccourci (Bureau, menu Démarrer, épingle de la barre des tâches)
+function Get-ShortcutFolders {
+    return @(
+        [Environment]::GetFolderPath('Desktop'),
+        [Environment]::GetFolderPath('Programs'),
+        (Join-Path $env:APPDATA 'Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar')
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+}
+
+# À chaque démarrage : si un raccourci existe déjà, on le refait pour qu'il pointe
+# vers l'emplacement ACTUEL du launcher (utile si tu as déplacé les fichiers)
+function Repair-Shortcuts {
+    if (-not (Get-ExePath) -or -not (Initialize-ShellHelper)) { return }
+    $fixed = 0
+    foreach ($folder in Get-ShortcutFolders) {
+        $lnk = Join-Path $folder $ShortcutName
+        if (Test-Path -LiteralPath $lnk) {
+            try { [void](New-AppShortcut $folder); $fixed++ } catch {}
+        }
+    }
+    if ($fixed -gt 0) { try { [RML.Shell]::RefreshIcons() } catch {} }
 }
 
 function Show-ShortcutDialog {
@@ -2414,6 +2456,7 @@ function Show-ShortcutDialog {
     try {
         if ($wantDesk)  { [void](New-AppShortcut $desktop); $done += 'Bureau' }
         if ($wantStart) { [void](New-AppShortcut $startMn); $done += 'menu Démarrer' }
+        if ($done.Count -gt 0) { [RML.Shell]::RefreshIcons() }
     } catch {
         [void](Show-Msg "Erreur pendant la création des raccourcis : $($_.Exception.Message)" 'Raccourcis' 'OK' 'Warning')
     }
@@ -2456,6 +2499,7 @@ $form.Add_Shown({
         $timer.Start()
         try { Build-LauncherExe } catch {}   # silencieux : si ça rate, le .bat marche toujours
         try { Set-TaskbarIdentity } catch {} # rend "Épingler à la barre des tâches" possible
+        try { Repair-Shortcuts } catch {}    # répare les raccourcis si le launcher a été déplacé
         Invoke-FirstRunShortcuts             # 1er lancement : propose Bureau / Démarrer / barre des tâches
     } catch { Show-Error $_ }
 })
