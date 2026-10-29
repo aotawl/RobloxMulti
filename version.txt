@@ -1,2 +1,4 @@
-1.0.0
-- Première version publiée sur GitHub
+1.1.0
+- Nouveau bouton "Arrière-plan" : le launcher passe dans la zone de notification (flèche ^)
+- Nouveau logo
+- La fenêtre noire du terminal ne s'affiche plus
