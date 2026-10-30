@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '1.6.0'
+$AppVersion = '1.6.1'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -2594,7 +2594,39 @@ $cmbEco.Add_SelectedIndexChanged({ try { if ($cmbEco.SelectedIndex -ge 0 -and $c
 
 $ecoTimer = New-Object System.Windows.Forms.Timer
 $ecoTimer.Interval = 700
-$ecoTimer.Add_Tick({ try { Update-Economy } catch {} })
+# ------------------------------------------------------------ Roblox fermés mais restés en arrière-plan
+# Quand on ferme un Roblox avec la croix, son processus reste parfois ouvert sans fenêtre.
+# Si un Roblox AVAIT une fenêtre et n'en a plus depuis 4 secondes, on le ferme pour de bon.
+# (Un Roblox qui démarre n'a pas encore de fenêtre : il n'est jamais touché.)
+$script:rbxWin = @{}   # pid -> @{ HadWindow ; NoWinSince }
+
+function Stop-ClosedRoblox {
+    $procs = @(Get-Process -Name $RobloxProc -ErrorAction SilentlyContinue)
+    $alive = @{}
+    $now = [DateTime]::UtcNow
+    foreach ($p in $procs) {
+        $alive[$p.Id] = $true
+        $st = $script:rbxWin[$p.Id]
+        if (-not $st) { $st = @{ HadWindow = $false; NoWinSince = $null }; $script:rbxWin[$p.Id] = $st }
+        if ($p.MainWindowHandle -ne [IntPtr]::Zero) {
+            $st.HadWindow = $true
+            $st.NoWinSince = $null
+        } elseif ($st.HadWindow) {
+            if (-not $st.NoWinSince) { $st.NoWinSince = $now }
+            elseif (($now - $st.NoWinSince).TotalSeconds -ge 4) {
+                try { $p.Kill() } catch {}
+                $script:rbxWin.Remove($p.Id)
+                $alive.Remove($p.Id)
+            }
+        }
+    }
+    foreach ($id in @($script:rbxWin.Keys)) { if (-not $alive[$id]) { $script:rbxWin.Remove($id) } }
+}
+
+$ecoTimer.Add_Tick({
+    try { Stop-ClosedRoblox } catch {}
+    try { Update-Economy } catch {}
+})
 
 # ------------------------------------------------------------ raccourcis & épinglage
 $AppId        = 'aotawl.RobloxMulti'
