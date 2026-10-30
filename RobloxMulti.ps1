@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '1.5.0'
+$AppVersion = '1.6.0'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -1804,6 +1804,8 @@ $miOpen.Font = New-Object System.Drawing.Font($miOpen.Font, [System.Drawing.Font
 $miMulti  = New-Object System.Windows.Forms.ToolStripMenuItem('Multi-instance activé')
 [void]$trayMenu.Items.Add($miMulti)
 $miKill   = $trayMenu.Items.Add('Fermer tous les Roblox')
+$miEco    = New-Object System.Windows.Forms.ToolStripMenuItem('Économie (Roblox en arrière-plan)')
+[void]$trayMenu.Items.Add($miEco)
 $miShort  = $trayMenu.Items.Add('Raccourcis (Bureau, menu Démarrer, barre des tâches)...')
 [void]$trayMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 $miQuit   = $trayMenu.Items.Add('Quitter')
@@ -1818,8 +1820,21 @@ $form.Controls.Add($grpMulti)
 
 $lblStatus = New-Object System.Windows.Forms.Label
 $lblStatus.Font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
-$lblStatus.SetBounds(15, 22, 300, 24)
+$lblStatus.SetBounds(15, 22, 200, 24)
 $grpMulti.Controls.Add($lblStatus)
+
+$lblEco = New-Object System.Windows.Forms.Label
+$lblEco.Text = 'Économie :'
+$lblEco.TextAlign = 'MiddleRight'
+$lblEco.SetBounds(212, 20, 70, 24)
+$grpMulti.Controls.Add($lblEco)
+
+$cmbEco = New-Object System.Windows.Forms.ComboBox
+$cmbEco.DropDownStyle = 'DropDownList'
+$cmbEco.SetBounds(285, 20, 130, 24)
+$grpMulti.Controls.Add($cmbEco)
+$tip = New-Object System.Windows.Forms.ToolTip
+$tip.SetToolTip($cmbEco, "Ralentit les Roblox que tu ne regardes pas (moins de processeur, moins de FPS).`r`nCelui qui est au premier plan reste toujours à fond.")
 
 $lblCount = New-Object System.Windows.Forms.Label
 $lblCount.SetBounds(15, 48, 300, 20)
@@ -2476,6 +2491,111 @@ function Show-StartupSplash {
 }
 
 
+# ------------------------------------------------------------ mode économie
+# Les Roblox qui ne sont PAS au premier plan sont ralentis : priorité basse + moins de cœurs du
+# processeur. Celui que tu utilises reste à fond. (Roblox ne permet plus de bloquer les FPS sous 60.)
+$EcoFile = Join-Path $DataDir 'economy.json'
+$EcoLevels = @(
+    [pscustomobject]@{ Name = 'Désactivée'; Prio = 'Normal';      Cores = 0 },
+    [pscustomobject]@{ Name = 'Légère';     Prio = 'BelowNormal'; Cores = -2 },   # moitié des cœurs
+    [pscustomobject]@{ Name = 'Forte';      Prio = 'Idle';        Cores = 2 },
+    [pscustomobject]@{ Name = 'Maximale';   Prio = 'Idle';        Cores = 1 }
+)
+$script:ecoLevel = 0
+$script:ecoApplied = @{}   # pid -> réglage déjà appliqué (pour ne pas le refaire en boucle)
+
+try {
+    Add-Type -Namespace RML -Name Fg -MemberDefinition @'
+[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr hWnd, out uint pid);
+'@
+} catch {}
+
+function Load-EcoLevel {
+    try { if (Test-Path -LiteralPath $EcoFile) { $script:ecoLevel = [Math]::Min(3, [Math]::Max(0, [int](Get-Content -LiteralPath $EcoFile -Raw | ConvertFrom-Json).Level)) } } catch {}
+}
+function Save-EcoLevel {
+    try {
+        if (-not (Test-Path -LiteralPath $DataDir)) { New-Item -ItemType Directory -Path $DataDir -Force | Out-Null }
+        @{ Level = $script:ecoLevel } | ConvertTo-Json | Set-Content -LiteralPath $EcoFile -Encoding UTF8
+    } catch {}
+}
+
+function Get-ForegroundPid {
+    try {
+        $p = [uint32]0
+        [void][RML.Fg]::GetWindowThreadProcessId([RML.Fg]::GetForegroundWindow(), [ref]$p)
+        return [int]$p
+    } catch { return 0 }
+}
+
+function Get-CoreMask($cores) {
+    $n = [Math]::Min(63, [Environment]::ProcessorCount)
+    $all = [long]([Math]::Pow(2, $n) - 1)
+    if ($cores -eq 0) { return $all }
+    if ($cores -lt 0) { $cores = [Math]::Max(1, [int][Math]::Floor($n / 2)) }
+    $cores = [Math]::Min($cores, $n)
+    # on prend les DERNIERS cœurs (le cœur 0 sert beaucoup à Windows)
+    $mask = [long]0
+    for ($i = $n - $cores; $i -lt $n; $i++) { $mask = $mask -bor ([long]1 -shl $i) }
+    return $mask
+}
+
+function Set-RobloxPerf($proc, $prio, $mask) {
+    $key = "$prio|$mask"
+    if ($script:ecoApplied[$proc.Id] -eq $key) { return }
+    try {
+        $proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]$prio
+        $proc.ProcessorAffinity = [IntPtr]$mask
+        $script:ecoApplied[$proc.Id] = $key
+    } catch {}
+}
+
+# Appelé en boucle (toutes les 0,7 s)
+function Update-Economy {
+    $procs = @(Get-Process -Name $RobloxProc -ErrorAction SilentlyContinue)
+    # oublie les Roblox fermés
+    foreach ($id in @($script:ecoApplied.Keys)) { if (-not ($procs | Where-Object { $_.Id -eq $id })) { $script:ecoApplied.Remove($id) } }
+    if ($procs.Count -eq 0) { return }
+    $fg = Get-ForegroundPid
+    $lvl = $EcoLevels[$script:ecoLevel]
+    $full = Get-CoreMask 0
+    foreach ($p in $procs) {
+        if ($script:ecoLevel -eq 0 -or $p.Id -eq $fg) { Set-RobloxPerf $p 'Normal' $full }
+        else { Set-RobloxPerf $p $lvl.Prio (Get-CoreMask $lvl.Cores) }
+    }
+}
+
+# Remet tous les Roblox à fond (quand on désactive ou qu'on quitte le launcher)
+function Reset-Economy {
+    $full = Get-CoreMask 0
+    foreach ($p in @(Get-Process -Name $RobloxProc -ErrorAction SilentlyContinue)) {
+        try { $p.PriorityClass = 'Normal'; $p.ProcessorAffinity = [IntPtr]$full } catch {}
+    }
+    $script:ecoApplied = @{}
+}
+
+function Set-EcoLevel($lvl) {
+    $script:ecoLevel = [int]$lvl
+    Save-EcoLevel
+    if ($cmbEco.SelectedIndex -ne $script:ecoLevel) { $cmbEco.SelectedIndex = $script:ecoLevel }
+    foreach ($i in 0..3) { $miEco.DropDownItems[$i].Checked = ($i -eq $script:ecoLevel) }
+    if ($script:ecoLevel -eq 0) { Reset-Economy } else { $script:ecoApplied = @{}; Update-Economy }
+}
+
+foreach ($l in $EcoLevels) {
+    [void]$cmbEco.Items.Add($l.Name)
+    $mi = New-Object System.Windows.Forms.ToolStripMenuItem($l.Name)
+    $mi.Tag = $miEco.DropDownItems.Count
+    $mi.Add_Click({ param($s, $e) try { Set-EcoLevel $s.Tag } catch { Show-Error $_ } })
+    [void]$miEco.DropDownItems.Add($mi)
+}
+$cmbEco.Add_SelectedIndexChanged({ try { if ($cmbEco.SelectedIndex -ge 0 -and $cmbEco.SelectedIndex -ne $script:ecoLevel) { Set-EcoLevel $cmbEco.SelectedIndex } } catch { Show-Error $_ } })
+
+$ecoTimer = New-Object System.Windows.Forms.Timer
+$ecoTimer.Interval = 700
+$ecoTimer.Add_Tick({ try { Update-Economy } catch {} })
+
 # ------------------------------------------------------------ raccourcis & épinglage
 $AppId        = 'aotawl.RobloxMulti'
 $ShortcutName = 'Roblox Multi Launcher.lnk'
@@ -2756,6 +2876,9 @@ $form.Add_Shown({
         try { Set-TaskbarIdentity } catch {} # rend "Épingler à la barre des tâches" possible
         try { Repair-Shortcuts } catch {}    # répare les raccourcis si le launcher a été déplacé
         Invoke-FirstRunShortcuts             # 1er lancement : propose Bureau / Démarrer / barre des tâches
+        Load-EcoLevel
+        Set-EcoLevel $script:ecoLevel
+        $ecoTimer.Start()
     } catch { Show-Error $_ }
 })
 
@@ -2766,6 +2889,7 @@ $form.Add_FormClosing({
         if ($r -ne 'Yes') { $ev.Cancel = $true; return }
     }
     $timer.Stop()
+    try { $ecoTimer.Stop(); Reset-Economy } catch {}
     Disable-Multi
     $tray.Visible = $false
     $tray.Dispose()
