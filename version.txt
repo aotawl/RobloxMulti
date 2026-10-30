@@ -1,4 +1,1 @@
-1.4.0
-- Nouveau : écran d'accueil au démarrage (GIF ou vidéo)
-- Colle un lien (Tenor, Giphy, Discord, lien .gif/.mp4) ou choisis un fichier sur ton PC
-- Réglable en bas de la fenêtre ou dans le menu de l'icône ^
+1.5.0

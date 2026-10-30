@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '1.4.0'
+$AppVersion = '1.5.0'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -1778,7 +1778,7 @@ l/kqogQTCjuY51MjhcmFQ3fT7qXrNnKp1CMZzdVrd+ys1V4GghCovlstgHO9LFtZ6yd/gsegj34tyzbf
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Roblox Multi Launcher  v$AppVersion"
-$form.ClientSize = New-Object System.Drawing.Size(455, 562)
+$form.ClientSize = New-Object System.Drawing.Size(455, 540)
 $form.FormBorderStyle = 'FixedSingle'
 $form.MaximizeBox = $false
 $form.StartPosition = 'CenterScreen'
@@ -1805,7 +1805,6 @@ $miMulti  = New-Object System.Windows.Forms.ToolStripMenuItem('Multi-instance ac
 [void]$trayMenu.Items.Add($miMulti)
 $miKill   = $trayMenu.Items.Add('Fermer tous les Roblox')
 $miShort  = $trayMenu.Items.Add('Raccourcis (Bureau, menu Démarrer, barre des tâches)...')
-$miSplash = $trayMenu.Items.Add("Écran d'accueil (GIF / vidéo)...")
 [void]$trayMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 $miQuit   = $trayMenu.Items.Add('Quitter')
 $tray.ContextMenuStrip = $trayMenu
@@ -1909,11 +1908,6 @@ $lnkShort.Text = 'Raccourcis / épingler'
 $lnkShort.TextAlign = 'TopRight'
 $lnkShort.SetBounds(300, 515, 141, 20)
 $form.Controls.Add($lnkShort)
-
-$lnkSplash = New-Object System.Windows.Forms.LinkLabel
-$lnkSplash.Text = "Écran d'accueil (GIF / vidéo au démarrage)"
-$lnkSplash.SetBounds(14, 537, 300, 20)
-$form.Controls.Add($lnkSplash)
 
 # ============================================================ logique UI
 function Update-Status {
@@ -2099,8 +2093,7 @@ function Check-Update($manual) {
             return
         }
 
-        $msg = "Nouvelle version disponible : v$remote (tu as v$AppVersion)."
-        if ($notes) { $msg += "`r`n`r`nNouveautés :`r`n$notes" }
+        $msg = "Une mise à jour est disponible (v$remote)."
         $msg += "`r`n`r`nMettre à jour maintenant ?"
         if ((Show-Msg $msg 'Mise à jour' 'YesNo' 'Question') -ne 'Yes') { return }
 
@@ -2228,7 +2221,10 @@ $miQuit.Add_Click({ $form.Close() })
 $trayMenu.Add_Opening({ $miMulti.Checked = (Test-Active) })
 
 # ------------------------------------------------------------ écran d'accueil (GIF / vidéo)
-$SplashCfgFile = Join-Path $DataDir 'splash.json'
+# L'écran d'accueil est choisi par le propriétaire du dépôt GitHub (fichier splash.json du dépôt).
+# Ici on garde juste en cache le dernier média téléchargé.
+$SplashCfgFile = Join-Path $DataDir 'splash_state.json'
+$OldSplashCfg  = Join-Path $DataDir 'splash.json'   # ancien réglage local (v1.4.0), plus utilisé
 $GifExt   = @('.gif')
 $VideoExt = @('.mp4', '.m4v', '.wmv', '.avi', '.mov')
 $BrowserUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'
@@ -2248,6 +2244,36 @@ function Save-SplashConfig($cfg) {
     $cfg | ConvertTo-Json | Set-Content -LiteralPath $SplashCfgFile -Encoding UTF8
 }
 
+function Get-UrlText($url, $timeoutMs) {
+    $req = [System.Net.HttpWebRequest]::Create($url)
+    $req.UserAgent = $BrowserUA
+    $req.Timeout = $timeoutMs; $req.ReadWriteTimeout = $timeoutMs
+    $req.Headers.Add('Cache-Control', 'no-cache')
+    $resp = $req.GetResponse()
+    try {
+        $sr = New-Object System.IO.StreamReader($resp.GetResponseStream(), [System.Text.Encoding]::UTF8)
+        return $sr.ReadToEnd()
+    } finally { $resp.Close() }
+}
+
+function Save-UrlToFile($url, $path, $timeoutMs) {
+    $req = [System.Net.HttpWebRequest]::Create($url)
+    $req.UserAgent = $BrowserUA
+    $req.Timeout = $timeoutMs; $req.ReadWriteTimeout = $timeoutMs
+    $resp = $req.GetResponse()
+    try {
+        $in = $resp.GetResponseStream()
+        $out = [System.IO.File]::Create($path)
+        try {
+            $buf = New-Object byte[] 65536; $total = 0
+            while (($n = $in.Read($buf, 0, $buf.Length)) -gt 0) {
+                $out.Write($buf, 0, $n); $total += $n
+                if ($total -gt 60MB) { throw "Fichier trop lourd (60 Mo max)." }
+            }
+        } finally { $out.Close(); $in.Close() }
+    } finally { $resp.Close() }
+}
+
 function Get-UrlExt($u) {
     try { return [IO.Path]::GetExtension(([Uri]$u).AbsolutePath).ToLower() } catch { return '' }
 }
@@ -2261,10 +2287,7 @@ function Resolve-MediaUrl($url) {
         return "https://media.giphy.com/media/$($Matches[1])/giphy.gif"
     }
     # Sinon on lit la page et on cherche le média dans ses balises (og:image, og:video...)
-    $wc = New-Object System.Net.WebClient
-    $wc.Encoding = [System.Text.Encoding]::UTF8
-    $wc.Headers.Add('User-Agent', $BrowserUA)
-    try { $html = $wc.DownloadString($url) } finally { $wc.Dispose() }
+    $html = Get-UrlText $url 8000
     $found = New-Object System.Collections.ArrayList
     foreach ($m in [regex]::Matches($html, '(?i)<meta[^>]+(?:property|name)\s*=\s*"(?:og:video:secure_url|og:video:url|og:video|og:image|twitter:image|twitter:player:stream)"[^>]*>')) {
         if ($m.Value -match '(?i)content\s*=\s*"([^"]+)"') { [void]$found.Add([System.Net.WebUtility]::HtmlDecode($Matches[1])) }
@@ -2288,9 +2311,8 @@ function Get-SplashMedia($source) {
         $direct = Resolve-MediaUrl $source
         $ext = Get-UrlExt $direct
         $tmp = Join-Path $DataDir "splash_$stamp.tmp"
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add('User-Agent', $BrowserUA)
-        try { $wc.DownloadFile($direct, $tmp) } finally { $wc.Dispose() }
+        try { Save-UrlToFile $direct $tmp 20000 }
+        catch { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue; throw }
         if (-not ($GifExt -contains $ext -or $VideoExt -contains $ext)) {
             # Pas d'extension dans le lien : on regarde le début du fichier
             $head = [byte[]](Get-Content -LiteralPath $tmp -Encoding Byte -TotalCount 12)
@@ -2419,142 +2441,40 @@ function Show-SplashFile($file, $maxSec, $sound) {
     elseif ($VideoExt -contains $ext) { Show-VideoSplash $file $maxSec $sound }
 }
 
-# Appelé au démarrage, avant d'afficher le launcher
+# Appelé au démarrage, avant d'afficher le launcher.
+# Lit splash.json sur GitHub ; si le GIF/la vidéo a changé, le télécharge une fois puis le garde en cache.
 function Show-StartupSplash {
-    $cfg = Get-SplashConfig
-    if (-not $cfg.Enabled) { return }
-    try { Show-SplashFile $cfg.File $cfg.MaxSeconds $cfg.Sound } catch {}
-}
+    Remove-Item -LiteralPath $OldSplashCfg -Force -ErrorAction SilentlyContinue
+    $state = Get-SplashConfig
 
-function Show-SplashDialog {
-    $cfg = Get-SplashConfig
-    $script:splashTry = $null   # média préparé pendant l'aperçu (pour ne pas re-télécharger)
-
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "Écran d'accueil"
-    $dlg.ClientSize = New-Object System.Drawing.Size(420, 245)
-    $dlg.FormBorderStyle = 'FixedDialog'
-    $dlg.MaximizeBox = $false; $dlg.MinimizeBox = $false
-    $dlg.StartPosition = 'CenterParent'
-    $dlg.Font = $form.Font
-    if ($script:appIcon) { $dlg.Icon = $script:appIcon }
-
-    $cbOn = New-Object System.Windows.Forms.CheckBox
-    $cbOn.Text = 'Afficher un GIF / une vidéo au démarrage'
-    $cbOn.SetBounds(15, 12, 390, 24)
-    $cbOn.Checked = [bool]$cfg.Enabled
-    $dlg.Controls.Add($cbOn)
-
-    $lblSrc = New-Object System.Windows.Forms.Label
-    $lblSrc.Text = 'Lien du GIF / de la vidéo, ou fichier sur ton PC :'
-    $lblSrc.SetBounds(15, 44, 390, 18)
-    $dlg.Controls.Add($lblSrc)
-
-    $txtSrc = New-Object System.Windows.Forms.TextBox
-    $txtSrc.SetBounds(15, 64, 295, 24)
-    $txtSrc.Text = "$($cfg.Source)"
-    $dlg.Controls.Add($txtSrc)
-
-    $btnBrowse = New-Object System.Windows.Forms.Button
-    $btnBrowse.Text = 'Parcourir...'
-    $btnBrowse.SetBounds(316, 62, 90, 27)
-    $dlg.Controls.Add($btnBrowse)
-
-    $lblHint = New-Object System.Windows.Forms.Label
-    $lblHint.ForeColor = [System.Drawing.Color]::Gray
-    $lblHint.Text = "Marche avec : liens .gif / .mp4 directs, Tenor, Giphy, Discord.`r`nPas YouTube. Clic ou Échap pendant l'écran d'accueil pour le passer."
-    $lblHint.SetBounds(15, 93, 395, 34)
-    $dlg.Controls.Add($lblHint)
-
-    $cbSound = New-Object System.Windows.Forms.CheckBox
-    $cbSound.Text = 'Son (pour les vidéos)'
-    $cbSound.SetBounds(15, 132, 200, 24)
-    $cbSound.Checked = [bool]$cfg.Sound
-    $dlg.Controls.Add($cbSound)
-
-    $lblDur = New-Object System.Windows.Forms.Label
-    $lblDur.Text = 'Durée max :'
-    $lblDur.SetBounds(15, 166, 75, 20)
-    $dlg.Controls.Add($lblDur)
-
-    $numDur = New-Object System.Windows.Forms.NumericUpDown
-    $numDur.Minimum = 1; $numDur.Maximum = 30
-    $numDur.Value = [Math]::Min(30, [Math]::Max(1, [int]$cfg.MaxSeconds))
-    $numDur.SetBounds(92, 163, 55, 24)
-    $dlg.Controls.Add($numDur)
-
-    $lblSec = New-Object System.Windows.Forms.Label
-    $lblSec.Text = "secondes (un GIF joue une fois, une vidéo jusqu'au bout)"
-    $lblSec.SetBounds(152, 166, 260, 20)
-    $dlg.Controls.Add($lblSec)
-
-    $btnPreview = New-Object System.Windows.Forms.Button
-    $btnPreview.Text = 'Aperçu'
-    $btnPreview.SetBounds(15, 203, 90, 30)
-    $dlg.Controls.Add($btnPreview)
-
-    $btnSave = New-Object System.Windows.Forms.Button
-    $btnSave.Text = 'Enregistrer'
-    $btnSave.SetBounds(220, 203, 92, 30)
-    $dlg.Controls.Add($btnSave)
-
-    $btnCancel = New-Object System.Windows.Forms.Button
-    $btnCancel.Text = 'Annuler'
-    $btnCancel.DialogResult = 'Cancel'
-    $btnCancel.SetBounds(318, 203, 88, 30)
-    $dlg.Controls.Add($btnCancel)
-    $dlg.CancelButton = $btnCancel
-
-    $btnBrowse.Add_Click({
-        $ofd = New-Object System.Windows.Forms.OpenFileDialog
-        $ofd.Title = 'Choisis un GIF ou une vidéo'
-        $ofd.Filter = 'GIF et vidéos|*.gif;*.mp4;*.m4v;*.wmv;*.avi;*.mov|Tous les fichiers|*.*'
-        if ($ofd.ShowDialog($dlg) -eq 'OK') { $txtSrc.Text = $ofd.FileName }
-        $ofd.Dispose()
-    })
-
-    # Prépare le média (une seule fois par source)
-    $prepare = {
-        $src = $txtSrc.Text.Trim().Trim('"')
-        if ($script:splashTry -and $script:splashTry.Source -eq $src -and (Test-Path -LiteralPath $script:splashTry.File)) { return $script:splashTry.File }
-        if ($src -eq "$($cfg.Source)" -and $cfg.File -and (Test-Path -LiteralPath $cfg.File)) { return $cfg.File }
-        $dlg.Cursor = 'WaitCursor'
-        try { $f = Get-SplashMedia $src } finally { $dlg.Cursor = 'Default' }
-        $script:splashTry = [pscustomobject]@{ Source = $src; File = $f }
-        return $f
+    $remote = $null
+    if (Test-UpdateEnabled) {
+        try { $remote = (Get-UrlText "$(Get-RawUrl 'splash.json')?t=$([DateTime]::UtcNow.Ticks)" 4000) | ConvertFrom-Json } catch {}
     }
 
-    $btnPreview.Add_Click({
-        try {
-            $f = & $prepare
-            Show-SplashFile $f ([int]$numDur.Value) $cbSound.Checked
-        } catch { [void](Show-Msg $_.Exception.Message "Écran d'accueil" 'OK' 'Warning') }
-    })
+    if ($remote) {
+        $src = "$($remote.source)".Trim()
+        # Nom d'un fichier mis directement sur le dépôt (ex : splash.gif) -> lien GitHub
+        if ($src -and $src -notmatch '^https?://') {
+            $src = Get-RawUrl ((($src.TrimStart('/') -split '/') | ForEach-Object { [Uri]::EscapeDataString($_) }) -join '/')
+        }
+        $state.Enabled = [bool]$remote.enabled -and [bool]$src
+        if ($null -ne $remote.maxSeconds) { $state.MaxSeconds = [Math]::Min(30, [Math]::Max(1, [int]$remote.maxSeconds)) }
+        if ($null -ne $remote.sound) { $state.Sound = [bool]$remote.sound }
+        if ($state.Enabled -and ($src -ne "$($state.Source)" -or -not $state.File -or -not (Test-Path -LiteralPath $state.File))) {
+            try {
+                $file = Get-SplashMedia $src
+                Remove-OldSplashFiles $file
+                $state.Source = $src; $state.File = $file
+            } catch {}   # lien cassé ou pas d'internet : on garde l'ancien média s'il existe
+        }
+        try { Save-SplashConfig $state } catch {}
+    }
 
-    $btnSave.Add_Click({
-        try {
-            $src = $txtSrc.Text.Trim().Trim('"')
-            $file = "$($cfg.File)"
-            if ($src) { $file = & $prepare }
-            elseif ($cbOn.Checked) { throw "Mets un lien ou choisis un fichier (ou décoche la case)." }
-            else { $file = '' }
-            $new = [pscustomobject]@{ Enabled = $cbOn.Checked; Source = $src; File = $file; Sound = $cbSound.Checked; MaxSeconds = [int]$numDur.Value }
-            Save-SplashConfig $new
-            Remove-OldSplashFiles $file
-            $dlg.DialogResult = 'OK'
-            $dlg.Close()
-        } catch { [void](Show-Msg $_.Exception.Message "Écran d'accueil" 'OK' 'Warning') }
-    })
-
-    if ($form.Visible) { [void]$dlg.ShowDialog($form) } else { [void]$dlg.ShowDialog() }
-    $dlg.Dispose()
-    # fichiers d'aperçu pas gardés
-    $keep = (Get-SplashConfig).File
-    Remove-OldSplashFiles $keep
+    if (-not $state.Enabled) { return }
+    try { Show-SplashFile $state.File $state.MaxSeconds $state.Sound } catch {}
 }
 
-$lnkSplash.Add_LinkClicked({ try { Show-SplashDialog } catch { Show-Error $_ } })
-$miSplash.Add_Click({ try { Show-SplashDialog } catch { Show-Error $_ } })
 
 # ------------------------------------------------------------ raccourcis & épinglage
 $AppId        = 'aotawl.RobloxMulti'
