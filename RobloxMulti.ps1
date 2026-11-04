@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '1.6.1'
+$AppVersion = '1.7.0'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -1778,7 +1778,7 @@ l/kqogQTCjuY51MjhcmFQ3fT7qXrNnKp1CMZzdVrd+ys1V4GghCovlstgHO9LFtZ6yd/gsegj34tyzbf
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Roblox Multi Launcher  v$AppVersion"
-$form.ClientSize = New-Object System.Drawing.Size(455, 540)
+$form.ClientSize = New-Object System.Drawing.Size(455, 562)
 $form.FormBorderStyle = 'FixedSingle'
 $form.MaximizeBox = $false
 $form.StartPosition = 'CenterScreen'
@@ -1806,6 +1806,7 @@ $miMulti  = New-Object System.Windows.Forms.ToolStripMenuItem('Multi-instance ac
 $miKill   = $trayMenu.Items.Add('Fermer tous les Roblox')
 $miEco    = New-Object System.Windows.Forms.ToolStripMenuItem('Économie (Roblox en arrière-plan)')
 [void]$trayMenu.Items.Add($miEco)
+$miOpts   = $trayMenu.Items.Add('Paramètres (anti-AFK, CPU, RAM, optimisation)...')
 $miShort  = $trayMenu.Items.Add('Raccourcis (Bureau, menu Démarrer, barre des tâches)...')
 [void]$trayMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 $miQuit   = $trayMenu.Items.Add('Quitter')
@@ -1923,6 +1924,11 @@ $lnkShort.Text = 'Raccourcis / épingler'
 $lnkShort.TextAlign = 'TopRight'
 $lnkShort.SetBounds(300, 515, 141, 20)
 $form.Controls.Add($lnkShort)
+
+$lnkOpts = New-Object System.Windows.Forms.LinkLabel
+$lnkOpts.Text = 'Paramètres (anti-AFK, CPU, RAM, optimisation)'
+$lnkOpts.SetBounds(14, 537, 330, 20)
+$form.Controls.Add($lnkOpts)
 
 # ============================================================ logique UI
 function Update-Status {
@@ -2396,10 +2402,11 @@ function Show-GifSplash($file, $maxSec) {
         $ms = [Math]::Min($ms, [int]$maxSec * 1000)
         $t = New-Object System.Windows.Forms.Timer
         $t.Interval = [Math]::Max(100, $ms)
-        $t.Add_Tick({ $t.Stop(); $sf.Close() })
+        $script:splashDone = $false
+        $t.Add_Tick({ $t.Stop(); $script:splashDone = $true; $sf.Close() })
         $sf.Add_Shown({ $t.Start() })
-        $pb.Add_Click({ $sf.Close() })
-        $sf.Add_KeyDown({ param($s, $e) if ($e.KeyCode -eq 'Escape' -or $e.KeyCode -eq 'Space') { $sf.Close() } })
+        # impossible de passer l'écran d'accueil (ni clic, ni Échap, ni Alt+F4)
+        $sf.Add_FormClosing({ param($s, $e) if (-not $script:splashDone) { $e.Cancel = $true } })
         [void]$sf.ShowDialog()
         $t.Dispose(); $sf.Dispose()
     } finally { $img.Dispose() }
@@ -2435,16 +2442,17 @@ function Show-VideoSplash($file, $maxSec, $sound) {
             $win.Top  = $area.Top + ($area.Height - $win.Height) / 2
         }
     })
-    $me.Add_MediaEnded({ $win.Close() })
-    $me.Add_MediaFailed({ $win.Close() })
+    $script:splashDone = $false
+    $me.Add_MediaEnded({ $script:splashDone = $true; $win.Close() })
+    $me.Add_MediaFailed({ $script:splashDone = $true; $win.Close() })
 
     $dt = New-Object System.Windows.Threading.DispatcherTimer
     $dt.Interval = [TimeSpan]::FromSeconds([int]$maxSec)
-    $dt.Add_Tick({ $dt.Stop(); $win.Close() })
+    $dt.Add_Tick({ $dt.Stop(); $script:splashDone = $true; $win.Close() })
 
     $win.Add_ContentRendered({ $me.Play(); $dt.Start() })
-    $win.Add_MouseDown({ $win.Close() })
-    $win.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Escape' -or $e.Key -eq 'Space') { $win.Close() } })
+    # impossible de passer l'écran d'accueil (ni clic, ni Échap, ni Alt+F4)
+    $win.Add_Closing({ param($s, $e) if (-not $script:splashDone) { $e.Cancel = $true } })
     $win.Add_Closed({ $dt.Stop(); try { $me.Stop(); $me.Close() } catch {} })
     [void]$win.ShowDialog()
 }
@@ -2626,7 +2634,349 @@ function Stop-ClosedRoblox {
 $ecoTimer.Add_Tick({
     try { Stop-ClosedRoblox } catch {}
     try { Update-Economy } catch {}
+    try { Update-Optimizations } catch {}
 })
+
+# ------------------------------------------------------------ paramètres : anti-AFK, limites CPU/RAM, optimisation
+$OptsFile = Join-Path $DataDir 'options.json'
+
+function Get-Options {
+    $o = [pscustomobject]@{
+        AfkOn = $true;  AfkMinutes = 15; AfkAction = 0      # 0 = clic droit, 1 = saut (Espace)
+        CpuOn = $false; CpuPercent = 50                     # % du processeur pour TOUS les Roblox ensemble
+        RamOn = $false; RamMB = 1500                         # Mo max par Roblox
+        EffOn = $true                                        # mode efficacité Windows en arrière-plan
+        TrimOn = $true                                       # libérer la RAM des Roblox en arrière-plan
+    }
+    try {
+        if (Test-Path -LiteralPath $OptsFile) {
+            $d = Get-Content -LiteralPath $OptsFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($k in @($o.PSObject.Properties.Name)) { if ($null -ne $d.$k) { $o.$k = $d.$k } }
+        }
+    } catch {}
+    $o.AfkMinutes = [Math]::Min(18, [Math]::Max(1, [int]$o.AfkMinutes))
+    $o.CpuPercent = [Math]::Min(95, [Math]::Max(5, [int]$o.CpuPercent))
+    $o.RamMB      = [Math]::Min(16000, [Math]::Max(300, [int]$o.RamMB))
+    return $o
+}
+function Save-Options($o) {
+    if (-not (Test-Path -LiteralPath $DataDir)) { New-Item -ItemType Directory -Path $DataDir -Force | Out-Null }
+    $o | ConvertTo-Json | Set-Content -LiteralPath $OptsFile -Encoding UTF8
+}
+$script:opts = Get-Options
+
+try {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Threading;
+namespace RML {
+    // Limites CPU / RAM via un "Job" Windows qui regroupe tous les Roblox
+    public static class Perf {
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr CreateJobObject(IntPtr a, string name);
+        [DllImport("kernel32.dll")] static extern bool SetInformationJobObject(IntPtr job, int cls, IntPtr info, uint len);
+        [DllImport("kernel32.dll")] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr proc);
+        [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+        [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+        [DllImport("psapi.dll")] static extern bool EmptyWorkingSet(IntPtr h);
+        [DllImport("kernel32.dll")] static extern bool SetProcessInformation(IntPtr h, int cls, ref PowerThrottling s, int size);
+
+        [StructLayout(LayoutKind.Sequential)] struct CpuRate { public uint ControlFlags; public uint Rate; }
+        [StructLayout(LayoutKind.Sequential)] struct BasicLimit {
+            public long PerProcessUserTimeLimit; public long PerJobUserTimeLimit; public uint LimitFlags;
+            public UIntPtr MinimumWorkingSetSize; public UIntPtr MaximumWorkingSetSize; public uint ActiveProcessLimit;
+            public UIntPtr Affinity; public uint PriorityClass; public uint SchedulingClass;
+        }
+        [StructLayout(LayoutKind.Sequential)] public struct PowerThrottling { public uint Version; public uint ControlMask; public uint StateMask; }
+
+        static IntPtr job = IntPtr.Zero;
+        static bool EnsureJob() { if (job == IntPtr.Zero) job = CreateJobObject(IntPtr.Zero, null); return job != IntPtr.Zero; }
+
+        static bool SetInfo<T>(int cls, T value) where T : struct {
+            int size = Marshal.SizeOf(typeof(T));
+            IntPtr p = Marshal.AllocHGlobal(size);
+            try { Marshal.StructureToPtr(value, p, false); return SetInformationJobObject(job, cls, p, (uint)size); }
+            finally { Marshal.FreeHGlobal(p); }
+        }
+
+        public static bool Assign(int pid) {
+            if (!EnsureJob()) return false;
+            IntPtr h = OpenProcess(0x0101, false, pid);   // PROCESS_SET_QUOTA | PROCESS_TERMINATE
+            if (h == IntPtr.Zero) return false;
+            try { return AssignProcessToJobObject(job, h); } finally { CloseHandle(h); }
+        }
+
+        // percent <= 0 : pas de limite
+        public static bool SetCpuCap(int percent) {
+            if (!EnsureJob()) return false;
+            CpuRate c = new CpuRate();
+            if (percent > 0 && percent < 100) { c.ControlFlags = 0x1 | 0x4; c.Rate = (uint)(percent * 100); }
+            return SetInfo(15, c);   // JobObjectCpuRateControlInformation (enable + hard cap)
+        }
+
+        // maxMB <= 0 : pas de limite. Au-delà, Windows déplace la mémoire vers le disque (pas de crash).
+        public static bool SetRamCap(long maxMB) {
+            if (!EnsureJob()) return false;
+            BasicLimit b = new BasicLimit();
+            if (maxMB > 0) {
+                b.LimitFlags = 0x1;   // JOB_OBJECT_LIMIT_WORKINGSET
+                b.MinimumWorkingSetSize = new UIntPtr((ulong)Math.Min(64, maxMB / 2) * 1024UL * 1024UL);
+                b.MaximumWorkingSetSize = new UIntPtr((ulong)maxMB * 1024UL * 1024UL);
+            }
+            return SetInfo(2, b);    // JobObjectBasicLimitInformation
+        }
+
+        public static void Trim(int pid) {
+            IntPtr h = OpenProcess(0x0500, false, pid);   // PROCESS_QUERY_INFORMATION | PROCESS_SET_QUOTA
+            if (h == IntPtr.Zero) return;
+            try { EmptyWorkingSet(h); } finally { CloseHandle(h); }
+        }
+
+        // "Mode efficacité" de Windows 11 (EcoQoS)
+        public static void SetEfficiency(int pid, bool on) {
+            IntPtr h = OpenProcess(0x0200, false, pid);   // PROCESS_SET_INFORMATION
+            if (h == IntPtr.Zero) return;
+            try {
+                PowerThrottling s = new PowerThrottling();
+                s.Version = 1; s.ControlMask = 1; s.StateMask = on ? 1u : 0u;
+                SetProcessInformation(h, 4, ref s, Marshal.SizeOf(typeof(PowerThrottling)));
+            } finally { CloseHandle(h); }
+        }
+    }
+
+    // Anti-AFK : met la fenêtre Roblox devant une fraction de seconde, fait une action, puis revient
+    public static class Afk {
+        [StructLayout(LayoutKind.Sequential)] struct LastInput { public uint cbSize; public uint dwTime; }
+        [StructLayout(LayoutKind.Sequential)] public struct Pt { public int X, Y; }
+        [StructLayout(LayoutKind.Sequential)] public struct Rc { public int L, T, R, B; }
+        [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LastInput li);
+        [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+        [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+        [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+        [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+        [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out Rc r);
+        [DllImport("user32.dll")] static extern bool GetCursorPos(out Pt p);
+        [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+        [DllImport("user32.dll")] static extern void mouse_event(uint f, int dx, int dy, uint d, IntPtr e);
+        [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint f, IntPtr e);
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
+        [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
+        [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+
+        public static uint IdleMs() {
+            LastInput li = new LastInput(); li.cbSize = (uint)Marshal.SizeOf(typeof(LastInput));
+            if (!GetLastInputInfo(ref li)) return 0;
+            return (uint)Environment.TickCount - li.dwTime;
+        }
+
+        static void Focus(IntPtr h) {
+            uint me = GetCurrentThreadId();
+            uint fg = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);
+            bool att = fg != 0 && fg != me && AttachThreadInput(me, fg, true);
+            SetForegroundWindow(h); BringWindowToTop(h);
+            if (att) AttachThreadInput(me, fg, false);
+        }
+
+        // action : 0 = clic droit au centre (ne fait rien en jeu), 1 = saut (Espace)
+        public static void Nudge(IntPtr hwnd, int action) {
+            IntPtr prev = GetForegroundWindow();
+            Pt cur; GetCursorPos(out cur);
+            bool wasMin = IsIconic(hwnd);
+            if (wasMin) { ShowWindow(hwnd, 9); Thread.Sleep(250); }   // SW_RESTORE
+            Focus(hwnd);
+            Thread.Sleep(200);
+            if (action == 1) {
+                keybd_event(0x20, 0x39, 0, IntPtr.Zero); Thread.Sleep(80);
+                keybd_event(0x20, 0x39, 2, IntPtr.Zero);
+            } else {
+                Rc r; GetWindowRect(hwnd, out r);
+                SetCursorPos((r.L + r.R) / 2, (r.T + r.B) / 2); Thread.Sleep(30);
+                mouse_event(0x0008, 0, 0, 0, IntPtr.Zero); Thread.Sleep(60);   // clic droit
+                mouse_event(0x0010, 0, 0, 0, IntPtr.Zero);
+            }
+            Thread.Sleep(120);
+            SetCursorPos(cur.X, cur.Y);
+            if (wasMin) ShowWindow(hwnd, 6);                                   // SW_MINIMIZE
+            if (prev != IntPtr.Zero && prev != hwnd) Focus(prev);
+        }
+    }
+}
+'@
+} catch {}
+
+$script:perfOk = [bool]('RML.Perf' -as [type])
+$script:jobbed = @{}        # pid -> déjà dans le groupe de limites
+$script:lastFg = @{}        # pid -> dernière fois où ce Roblox était au premier plan (ou relancé par l'anti-AFK)
+$script:lastTrim = @{}      # pid -> dernière libération de RAM
+$script:effState = @{}      # pid -> mode efficacité appliqué ?
+
+function Apply-Limits {
+    if (-not $script:perfOk) { return }
+    $o = $script:opts
+    try { [void][RML.Perf]::SetCpuCap($(if ($o.CpuOn) { [int]$o.CpuPercent } else { 0 })) } catch {}
+    try { [void][RML.Perf]::SetRamCap($(if ($o.RamOn) { [long]$o.RamMB } else { 0 })) } catch {}
+}
+
+function Reset-Optimizations {
+    if (-not $script:perfOk) { return }
+    try { [void][RML.Perf]::SetCpuCap(0); [void][RML.Perf]::SetRamCap(0) } catch {}
+    foreach ($id in @($script:effState.Keys)) { try { [RML.Perf]::SetEfficiency($id, $false) } catch {} }
+    $script:effState = @{}
+}
+
+# Appelé toutes les 0,7 s
+function Update-Optimizations {
+    if (-not $script:perfOk) { return }
+    $o = $script:opts
+    $procs = @(Get-Process -Name $RobloxProc -ErrorAction SilentlyContinue)
+    $fg = Get-ForegroundPid
+    $now = [DateTime]::UtcNow
+    $alive = @{}
+    foreach ($p in $procs) {
+        $alive[$p.Id] = $true
+        # chaque nouveau Roblox rejoint le groupe CPU/RAM
+        if (-not $script:jobbed.ContainsKey($p.Id)) { $script:jobbed[$p.Id] = $true; try { [void][RML.Perf]::Assign($p.Id) } catch {} }
+
+        $isFg = ($p.Id -eq $fg)
+        if ($isFg -or -not $script:lastFg.ContainsKey($p.Id)) { $script:lastFg[$p.Id] = $now }
+
+        # mode efficacité seulement en arrière-plan
+        $wantEff = ($o.EffOn -and -not $isFg)
+        if ($script:effState[$p.Id] -ne $wantEff) { try { [RML.Perf]::SetEfficiency($p.Id, $wantEff) } catch {}; $script:effState[$p.Id] = $wantEff }
+
+        # libère la RAM des Roblox en arrière-plan toutes les 2 minutes
+        if ($o.TrimOn -and -not $isFg) {
+            $lt = $script:lastTrim[$p.Id]
+            if (-not $lt -or ($now - $lt).TotalSeconds -ge 120) { try { [RML.Perf]::Trim($p.Id) } catch {}; $script:lastTrim[$p.Id] = $now }
+        }
+    }
+    foreach ($h in @($script:jobbed, $script:lastFg, $script:lastTrim, $script:effState)) {
+        foreach ($id in @($h.Keys)) { if (-not $alive[$id]) { $h.Remove($id) } }
+    }
+}
+
+# Anti-AFK : vérifié toutes les 5 s
+function Update-AntiAfk {
+    if (-not $script:opts.AfkOn -or -not ('RML.Afk' -as [type])) { return }
+    $now = [DateTime]::UtcNow
+    $limit = [double]$script:opts.AfkMinutes
+    foreach ($p in @(Get-Process -Name $RobloxProc -ErrorAction SilentlyContinue)) {
+        if ($p.MainWindowHandle -eq [IntPtr]::Zero) { continue }
+        $last = $script:lastFg[$p.Id]
+        if (-not $last) { $script:lastFg[$p.Id] = $now; continue }
+        $mins = ($now - $last).TotalMinutes
+        if ($mins -lt $limit) { continue }
+        # on attend que tu ne tapes/bouges pas (1,5 s) pour ne pas te gêner, sauf si le kick approche
+        if ([RML.Afk]::IdleMs() -lt 1500 -and $mins -lt 18.5) { continue }
+        try { [RML.Afk]::Nudge($p.MainWindowHandle, [int]$script:opts.AfkAction) } catch {}
+        $script:lastFg[$p.Id] = [DateTime]::UtcNow
+    }
+}
+
+$afkTimer = New-Object System.Windows.Forms.Timer
+$afkTimer.Interval = 5000
+$afkTimer.Add_Tick({ try { Update-AntiAfk } catch {} })
+
+function Show-OptionsDialog {
+    $o = Get-Options
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = 'Paramètres'
+    $dlg.ClientSize = New-Object System.Drawing.Size(430, 380)
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.MaximizeBox = $false; $dlg.MinimizeBox = $false
+    $dlg.StartPosition = 'CenterParent'
+    $dlg.Font = $form.Font
+    if ($script:appIcon) { $dlg.Icon = $script:appIcon }
+
+    function New-Num($parent, $x, $y, $min, $max, $val, $w = 60) {
+        $n = New-Object System.Windows.Forms.NumericUpDown
+        $n.Minimum = $min; $n.Maximum = $max; $n.Value = [Math]::Min($max, [Math]::Max($min, $val))
+        $n.SetBounds($x, $y, $w, 24); $parent.Controls.Add($n); return $n
+    }
+    function New-Lbl($parent, $text, $x, $y, $w, $gray = $false) {
+        $l = New-Object System.Windows.Forms.Label
+        $l.Text = $text; $l.SetBounds($x, $y, $w, 20)
+        if ($gray) { $l.ForeColor = [System.Drawing.Color]::Gray }
+        $parent.Controls.Add($l); return $l
+    }
+
+    # --- Anti-AFK
+    $gA = New-Object System.Windows.Forms.GroupBox
+    $gA.Text = 'Anti-AFK (évite le kick au bout de 20 min)'
+    $gA.SetBounds(10, 8, 410, 105)
+    $dlg.Controls.Add($gA)
+    $cbAfk = New-Object System.Windows.Forms.CheckBox
+    $cbAfk.Text = 'Activer'; $cbAfk.Checked = [bool]$o.AfkOn; $cbAfk.SetBounds(12, 22, 100, 22); $gA.Controls.Add($cbAfk)
+    [void](New-Lbl $gA 'Action toutes les' 12 50 105)
+    $numAfk = New-Num $gA 118 47 1 18 $o.AfkMinutes 50
+    [void](New-Lbl $gA "min d'inactivité, avec :" 172 50 140)
+    $cmbAct = New-Object System.Windows.Forms.ComboBox
+    $cmbAct.DropDownStyle = 'DropDownList'
+    [void]$cmbAct.Items.Add('Clic droit (recommandé)'); [void]$cmbAct.Items.Add('Saut (Espace)')
+    $cmbAct.SelectedIndex = [Math]::Min(1, [Math]::Max(0, [int]$o.AfkAction))
+    $cmbAct.SetBounds(12, 74, 170, 24); $gA.Controls.Add($cmbAct)
+    [void](New-Lbl $gA 'La fenêtre passe devant 0,5 s puis revient.' 190 77 215 $true)
+
+    # --- Limites
+    $gL = New-Object System.Windows.Forms.GroupBox
+    $gL.Text = 'Limites (tous les Roblox ensemble)'
+    $gL.SetBounds(10, 120, 410, 105)
+    $dlg.Controls.Add($gL)
+    $cbCpu = New-Object System.Windows.Forms.CheckBox
+    $cbCpu.Text = 'CPU max :'; $cbCpu.Checked = [bool]$o.CpuOn; $cbCpu.SetBounds(12, 24, 90, 22); $gL.Controls.Add($cbCpu)
+    $numCpu = New-Num $gL 105 23 5 95 $o.CpuPercent 55
+    [void](New-Lbl $gL "% du processeur ($([Environment]::ProcessorCount) cœurs)" 165 26 230)
+    $cbRam = New-Object System.Windows.Forms.CheckBox
+    $cbRam.Text = 'RAM max :'; $cbRam.Checked = [bool]$o.RamOn; $cbRam.SetBounds(12, 54, 90, 22); $gL.Controls.Add($cbRam)
+    $numRam = New-Num $gL 105 53 300 16000 $o.RamMB 70
+    $numRam.Increment = 100
+    $totalMB = 0; try { $totalMB = [int]((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1MB) } catch {}
+    [void](New-Lbl $gL ("Mo par Roblox" + $(if ($totalMB) { " (ton PC : $totalMB Mo)" } else { '' })) 180 56 225)
+    [void](New-Lbl $gL 'Trop bas = lags (Roblox utilise souvent 800 à 1500 Mo).' 12 80 390 $true)
+
+    # --- Optimisation
+    $gO = New-Object System.Windows.Forms.GroupBox
+    $gO.Text = 'Optimisation des Roblox en arrière-plan'
+    $gO.SetBounds(10, 232, 410, 95)
+    $dlg.Controls.Add($gO)
+    $cbEff = New-Object System.Windows.Forms.CheckBox
+    $cbEff.Text = 'Mode efficacité Windows (moins de chauffe et de conso)'; $cbEff.Checked = [bool]$o.EffOn
+    $cbEff.SetBounds(12, 22, 390, 22); $gO.Controls.Add($cbEff)
+    $cbTrim = New-Object System.Windows.Forms.CheckBox
+    $cbTrim.Text = 'Libérer leur RAM toutes les 2 minutes'; $cbTrim.Checked = [bool]$o.TrimOn
+    $cbTrim.SetBounds(12, 46, 390, 22); $gO.Controls.Add($cbTrim)
+    [void](New-Lbl $gO "Le Roblox que tu utilises n'est jamais ralenti. Voir aussi la liste « Économie »." 12 70 395 $true)
+
+    $ok = New-Object System.Windows.Forms.Button
+    $ok.Text = 'Enregistrer'; $ok.DialogResult = 'OK'; $ok.SetBounds(225, 340, 95, 30)
+    $dlg.Controls.Add($ok); $dlg.AcceptButton = $ok
+    $cancel = New-Object System.Windows.Forms.Button
+    $cancel.Text = 'Annuler'; $cancel.DialogResult = 'Cancel'; $cancel.SetBounds(325, 340, 95, 30)
+    $dlg.Controls.Add($cancel); $dlg.CancelButton = $cancel
+
+    if ($form.Visible) { $res = $dlg.ShowDialog($form) } else { $res = $dlg.ShowDialog() }
+    if ($res -eq 'OK') {
+        $new = [pscustomobject]@{
+            AfkOn = $cbAfk.Checked; AfkMinutes = [int]$numAfk.Value; AfkAction = $cmbAct.SelectedIndex
+            CpuOn = $cbCpu.Checked; CpuPercent = [int]$numCpu.Value
+            RamOn = $cbRam.Checked; RamMB = [int]$numRam.Value
+            EffOn = $cbEff.Checked; TrimOn = $cbTrim.Checked
+        }
+        Save-Options $new
+        $script:opts = Get-Options
+        Apply-Limits
+        if (-not $script:opts.EffOn) { foreach ($id in @($script:effState.Keys)) { try { [RML.Perf]::SetEfficiency($id, $false) } catch {} }; $script:effState = @{} }
+        if (-not $script:perfOk -and ($new.CpuOn -or $new.RamOn -or $new.EffOn -or $new.TrimOn)) {
+            [void](Show-Msg "Les limites et l'optimisation ne sont pas disponibles sur ce PC." 'Paramètres' 'OK' 'Warning')
+        }
+    }
+    $dlg.Dispose()
+}
+
+$lnkOpts.Add_LinkClicked({ try { Show-OptionsDialog } catch { Show-Error $_ } })
+$miOpts.Add_Click({ try { Show-OptionsDialog } catch { Show-Error $_ } })
+
 
 # ------------------------------------------------------------ raccourcis & épinglage
 $AppId        = 'aotawl.RobloxMulti'
@@ -2910,7 +3260,9 @@ $form.Add_Shown({
         Invoke-FirstRunShortcuts             # 1er lancement : propose Bureau / Démarrer / barre des tâches
         Load-EcoLevel
         Set-EcoLevel $script:ecoLevel
+        Apply-Limits
         $ecoTimer.Start()
+        $afkTimer.Start()
     } catch { Show-Error $_ }
 })
 
@@ -2921,7 +3273,7 @@ $form.Add_FormClosing({
         if ($r -ne 'Yes') { $ev.Cancel = $true; return }
     }
     $timer.Stop()
-    try { $ecoTimer.Stop(); Reset-Economy } catch {}
+    try { $ecoTimer.Stop(); $afkTimer.Stop(); Reset-Economy; Reset-Optimizations } catch {}
     Disable-Multi
     $tray.Visible = $false
     $tray.Dispose()
