@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '1.7.1'
+$AppVersion = '1.8.0'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -1969,7 +1969,7 @@ function Refresh-List {
     }
 }
 
-function Launch-Selected {
+function Launch-Selected($layout = $null) {
     if ($script:accounts.Count -eq 0) { [void](Show-Msg 'Ajoute d''abord un compte.'); return }
     $idx = @($list.SelectedIndices | ForEach-Object { $_ })
     if ($idx.Count -eq 0) { [void](Show-Msg 'Sélectionne au moins un compte (Ctrl+clic pour plusieurs).'); return }
@@ -1983,6 +1983,7 @@ function Launch-Selected {
         $r = Show-Msg "Le multi-instance est désactivé : un seul Roblox restera ouvert. Continuer ?" 'Attention' 'YesNo' 'Warning'
         if ($r -ne 'Yes') { return }
     }
+    if ($layout) { Start-Arrange $layout $idx.Count }
     $form.Cursor = 'WaitCursor'
     try {
         $first = $true
@@ -1993,7 +1994,10 @@ function Launch-Selected {
             }
             $first = $false
             $err = Start-Account $script:accounts[$i] $placeId
-            if ($err) { [void](Show-Msg $err 'Erreur' 'OK' 'Warning') }
+            if ($err) {
+                if ($script:arrange) { $script:arrange.Expected = [Math]::Max(0, $script:arrange.Expected - 1) }
+                [void](Show-Msg $err 'Erreur' 'OK' 'Warning')
+            }
         }
     } finally { $form.Cursor = 'Default' }
 }
@@ -2064,6 +2068,183 @@ $btnLaunch.Add_Click({ try { Launch-Selected } catch { Show-Error $_ } })
 $list.Add_DoubleClick({ try { Launch-Selected } catch { Show-Error $_ } })
 $btnAdd.Add_Click({ try { Add-Account } catch { Show-Error $_ } })
 $btnDel.Add_Click({ try { Remove-Selected } catch { Show-Error $_ } })
+
+# ------------------------------------------------------------ disposition des fenêtres
+try {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace RML {
+    public static class Layout {
+        [StructLayout(LayoutKind.Sequential)] public struct Rc { public int L, T, R, B; }
+        [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int hh, uint f);
+        [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+        [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+        [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
+        [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out Rc r);
+        [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out Rc r, int size);
+
+        // Rectangle visible (sans l'ombre invisible de Windows 10/11)
+        static Rc Visible(IntPtr h, out Rc win) {
+            GetWindowRect(h, out win);
+            Rc f;
+            if (DwmGetWindowAttribute(h, 9, out f, Marshal.SizeOf(typeof(Rc))) != 0) f = win;
+            return f;
+        }
+
+        // true si la fenêtre est déjà au bon endroit
+        public static bool IsAt(IntPtr h, int x, int y, int w, int hh) {
+            if (IsIconic(h) || IsZoomed(h)) return false;
+            Rc win; Rc f = Visible(h, out win);
+            return Math.Abs(f.L - x) <= 3 && Math.Abs(f.T - y) <= 3 && Math.Abs((f.R - f.L) - w) <= 3 && Math.Abs((f.B - f.T) - hh) <= 3;
+        }
+
+        public static void Place(IntPtr h, int x, int y, int w, int hh) {
+            if (IsIconic(h) || IsZoomed(h)) ShowWindow(h, 9);   // SW_RESTORE
+            Rc win; Rc f = Visible(h, out win);
+            int l = f.L - win.L, t = f.T - win.T, r = win.R - f.R, b = win.B - f.B;
+            SetWindowPos(h, IntPtr.Zero, x - l, y - t, w + l + r, hh + t + b, 0x0004 | 0x0010);   // NOZORDER | NOACTIVATE
+        }
+    }
+}
+'@
+} catch {}
+
+$Layouts = [ordered]@{
+    grid = 'Grille automatique'
+    cols = 'Côte à côte'
+    rows = 'Les uns sous les autres'
+    cascade = 'En cascade'
+}
+$script:arrange = $null
+
+# Calcule les emplacements (sur l'écran où se trouve le launcher)
+function Get-LayoutRects($layout, $n) {
+    $a = [System.Windows.Forms.Screen]::FromControl($form).WorkingArea
+    $n = [Math]::Max(1, [int]$n)
+    $rects = @()
+    if ($layout -eq 'cascade') {
+        $w = [int]($a.Width * 0.6); $h = [int]($a.Height * 0.6)
+        $sx = if ($n -gt 1) { [Math]::Min(45, [int](($a.Width - $w) / ($n - 1))) } else { 0 }
+        $sy = if ($n -gt 1) { [Math]::Min(45, [int](($a.Height - $h) / ($n - 1))) } else { 0 }
+        for ($i = 0; $i -lt $n; $i++) { $rects += ,@(($a.X + $i * $sx), ($a.Y + $i * $sy), $w, $h) }
+        return ,$rects
+    }
+    switch ($layout) {
+        'cols'  { $cols = $n; $rows = 1 }
+        'rows'  { $cols = 1;  $rows = $n }
+        default { $cols = [int][Math]::Ceiling([Math]::Sqrt($n)); $rows = [int][Math]::Ceiling($n / $cols) }
+    }
+    $w = [int][Math]::Floor($a.Width / $cols); $h = [int][Math]::Floor($a.Height / $rows)
+    for ($i = 0; $i -lt $n; $i++) {
+        $c = $i % $cols; $r = [int][Math]::Floor($i / $cols)
+        $rects += ,@(($a.X + $c * $w), ($a.Y + $r * $h), $w, $h)
+    }
+    return ,$rects
+}
+
+function Set-WindowsLayout($layout, $hwnds) {
+    if (-not ('RML.Layout' -as [type]) -or $hwnds.Count -eq 0) { return }
+    $rects = Get-LayoutRects $layout $hwnds.Count
+    for ($i = 0; $i -lt $hwnds.Count; $i++) {
+        $r = $rects[$i]
+        try { [RML.Layout]::Place($hwnds[$i], $r[0], $r[1], $r[2], $r[3]) } catch {}
+    }
+}
+
+# Range tout de suite les Roblox déjà ouverts (du plus ancien au plus récent)
+function Invoke-ArrangeOpen($layout) {
+    $hw = @(Get-Process -Name $RobloxProc -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+            Sort-Object { try { $_.StartTime } catch { [DateTime]::MaxValue } } |
+            ForEach-Object { $_.MainWindowHandle })
+    if ($hw.Count -eq 0) { [void](Show-Msg "Aucun Roblox ouvert à ranger."); return }
+    Set-WindowsLayout $layout $hw
+}
+
+# Prépare la disposition des Roblox qu'on va lancer : chaque nouvelle fenêtre prend sa place dès
+# qu'elle apparaît, et on la remet en place pendant 25 s (Roblox se redimensionne en chargeant)
+function Start-Arrange($layout, $count) {
+    $known = @{}
+    foreach ($p in @(Get-Process -Name $RobloxProc -ErrorAction SilentlyContinue)) { $known[$p.Id] = $true }
+    $script:arrange = @{
+        Layout = $layout; Expected = [int]$count; Known = $known
+        Windows = New-Object System.Collections.ArrayList; Started = [DateTime]::UtcNow
+    }
+    $arrangeTimer.Start()
+}
+
+function Update-Arrange {
+    $ar = $script:arrange
+    if (-not $ar) { $arrangeTimer.Stop(); return }
+    $now = [DateTime]::UtcNow
+    foreach ($p in @(Get-Process -Name $RobloxProc -ErrorAction SilentlyContinue | Sort-Object { try { $_.StartTime } catch { [DateTime]::MaxValue } })) {
+        if ($ar.Known[$p.Id] -or $p.MainWindowHandle -eq [IntPtr]::Zero) { continue }
+        if ($ar.Windows.Count -ge [Math]::Max(1, $ar.Expected)) { break }
+        $ar.Known[$p.Id] = $true
+        [void]$ar.Windows.Add(@{ Hwnd = $p.MainWindowHandle; Since = $now })
+    }
+    $n = [Math]::Max($ar.Expected, $ar.Windows.Count)
+    $rects = Get-LayoutRects $ar.Layout $n
+    $active = $false
+    for ($i = 0; $i -lt $ar.Windows.Count; $i++) {
+        $w = $ar.Windows[$i]
+        if (($now - $w.Since).TotalSeconds -gt 25) { continue }
+        $active = $true
+        $r = $rects[$i]
+        try { if (-not [RML.Layout]::IsAt($w.Hwnd, $r[0], $r[1], $r[2], $r[3])) { [RML.Layout]::Place($w.Hwnd, $r[0], $r[1], $r[2], $r[3]) } } catch {}
+    }
+    $allFound = ($ar.Windows.Count -ge $ar.Expected)
+    if ((($now - $ar.Started).TotalMinutes -gt 3) -or ($allFound -and -not $active)) {
+        $script:arrange = $null
+        $arrangeTimer.Stop()
+    }
+}
+
+$arrangeTimer = New-Object System.Windows.Forms.Timer
+$arrangeTimer.Interval = 1000
+$arrangeTimer.Add_Tick({ try { Update-Arrange } catch {} })
+
+# --- menu clic droit sur la liste des comptes
+$accMenu = New-Object System.Windows.Forms.ContextMenuStrip
+$miLaunch = $accMenu.Items.Add('Lancer')
+$miLaunch.Font = New-Object System.Drawing.Font($miLaunch.Font, [System.Drawing.FontStyle]::Bold)
+$miLaunchLayout = New-Object System.Windows.Forms.ToolStripMenuItem('Lancer et disposer les fenêtres')
+[void]$accMenu.Items.Add($miLaunchLayout)
+[void]$accMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+$miArrangeOpen = New-Object System.Windows.Forms.ToolStripMenuItem('Ranger les Roblox déjà ouverts')
+[void]$accMenu.Items.Add($miArrangeOpen)
+[void]$accMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+$miDelAcc = $accMenu.Items.Add('Supprimer')
+
+foreach ($k in $Layouts.Keys) {
+    $a = New-Object System.Windows.Forms.ToolStripMenuItem($Layouts[$k]); $a.Tag = $k
+    $a.Add_Click({ param($s, $e) try { Launch-Selected $s.Tag } catch { Show-Error $_ } })
+    [void]$miLaunchLayout.DropDownItems.Add($a)
+    $b = New-Object System.Windows.Forms.ToolStripMenuItem($Layouts[$k]); $b.Tag = $k
+    $b.Add_Click({ param($s, $e) try { Invoke-ArrangeOpen $s.Tag } catch { Show-Error $_ } })
+    [void]$miArrangeOpen.DropDownItems.Add($b)
+}
+$miLaunch.Add_Click({ try { Launch-Selected } catch { Show-Error $_ } })
+$miDelAcc.Add_Click({ try { Remove-Selected } catch { Show-Error $_ } })
+
+# clic droit : si on clique sur un compte pas sélectionné, il devient la sélection
+$list.Add_MouseDown({
+    param($s, $e)
+    if ($e.Button -ne [System.Windows.Forms.MouseButtons]::Right) { return }
+    $i = $list.IndexFromPoint($e.Location)
+    if ($i -ge 0 -and -not $list.GetSelected($i)) { $list.ClearSelected(); $list.SetSelected($i, $true) }
+})
+$accMenu.Add_Opening({
+    param($s, $e)
+    $n = $list.SelectedIndices.Count
+    $hasAcc = ($script:accounts.Count -gt 0 -and $n -gt 0)
+    $miLaunch.Text = if ($n -gt 1) { "Lancer ($n comptes)" } else { 'Lancer' }
+    $miLaunchLayout.Text = if ($n -gt 1) { "Lancer ($n comptes) et disposer les fenêtres" } else { 'Lancer et disposer les fenêtres' }
+    $miLaunch.Enabled = $hasAcc; $miLaunchLayout.Enabled = $hasAcc; $miDelAcc.Enabled = $hasAcc
+    $miArrangeOpen.Enabled = ((Get-RobloxCount) -gt 0)
+})
+$list.ContextMenuStrip = $accMenu
 
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 2000
@@ -3278,7 +3459,7 @@ $form.Add_FormClosing({
         if ($r -ne 'Yes') { $ev.Cancel = $true; return }
     }
     $timer.Stop()
-    try { $ecoTimer.Stop(); $afkTimer.Stop(); Reset-Economy; Reset-Optimizations } catch {}
+    try { $ecoTimer.Stop(); $afkTimer.Stop(); $arrangeTimer.Stop(); Reset-Economy; Reset-Optimizations } catch {}
     Disable-Multi
     $tray.Visible = $false
     $tray.Dispose()

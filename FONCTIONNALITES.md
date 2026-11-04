@@ -1,6 +1,6 @@
 # Roblox Multi Launcher : fiche des fonctionnalités
 
-**Version actuelle : v1.7.1**. Cette fiche est mise à jour à chaque nouvelle version.
+**Version actuelle : v1.8.0**. Cette fiche est mise à jour à chaque nouvelle version.
 
 ## Sommaire
 1. [Multi-instance](#1-multi-instance)
@@ -40,8 +40,23 @@ Aucun mot de passe n'est enregistré. Seule la session est gardée, **chiffrée 
 | Ajouter un compte | Bouton **Ajouter un compte** → une fenêtre de ton navigateur principal s'ouvre sur la connexion Roblox → connecte-toi → reviens et clique **OK** |
 | Lancer un compte | Sélectionne-le puis **Lancer**, ou double-clic dessus |
 | Lancer plusieurs comptes | **Ctrl + clic** pour en sélectionner plusieurs, puis **Lancer** (environ 3 s entre chaque) |
-| Supprimer un ou plusieurs comptes | Sélectionne-les puis **Supprimer** |
+| Supprimer un ou plusieurs comptes | Sélectionne-les puis **Supprimer**, ou clic droit → **Supprimer** |
+| Menu clic droit | Clic droit sur la liste des comptes : **Lancer**, **Lancer et disposer les fenêtres**, **Ranger les Roblox déjà ouverts**, **Supprimer** |
+| Lancer et disposer les fenêtres | Sélectionne un ou plusieurs comptes → clic droit → **Lancer et disposer les fenêtres** → choisis une disposition (voir ci-dessous) |
+| Ranger les Roblox déjà ouverts | Clic droit → **Ranger les Roblox déjà ouverts** → choisis une disposition |
 | Session expirée | Le launcher prévient : supprime le compte et ajoute-le à nouveau |
+
+**Dispositions des fenêtres** (sur l'écran où se trouve le launcher) :
+
+| Disposition | Résultat |
+|---|---|
+| Grille automatique | Les fenêtres se partagent l'écran en grille (2 comptes = 2 colonnes, 4 = 2×2, 6 = 3×2...) |
+| Côte à côte | Une colonne par fenêtre, sur toute la hauteur |
+| Les uns sous les autres | Une ligne par fenêtre, sur toute la largeur |
+| En cascade | Fenêtres empilées en décalé |
+
+- Chaque fenêtre prend sa place dès qu'elle apparaît, puis elle est remise en place pendant 25 s, parce que Roblox se redimensionne en chargeant.
+- Si tu fais un clic droit sur un compte qui n'est pas sélectionné, il est sélectionné tout seul.
 
 - Navigateurs compatibles pour la connexion : Chrome, Edge, Brave, Opera, Vivaldi. Avec Firefox, le launcher passe par Edge.
 - La fenêtre de connexion est vierge, et elle est effacée après l'ajout du compte.
@@ -190,7 +205,8 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 ## 13. Historique des versions
 | Version | Nouveautés |
 |---|---|
-| **1.7.1** | Écran d'accueil re-téléchargé chaque jour pour détecter un changement de vidéo |
+| **1.8.0** | Clic droit sur les comptes : lancer et disposer les fenêtres (grille, côte à côte, lignes, cascade), ranger les Roblox déjà ouverts |
+| 1.7.1 | Écran d'accueil re-téléchargé chaque jour pour détecter un changement de vidéo |
 | 1.7.0 | Anti-AFK, limites CPU / RAM, optimisation (mode efficacité, libération RAM), fenêtre Paramètres, écran d'accueil impossible à passer |
 | 1.6.1 | Fermeture automatique des Roblox restés en arrière-plan après la croix |
 | 1.6.0 | Mode Économie (4 niveaux) |
