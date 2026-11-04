@@ -1,6 +1,6 @@
 # Roblox Multi Launcher : fiche des fonctionnalités
 
-**Version actuelle : v1.8.0**. Cette fiche est mise à jour à chaque nouvelle version.
+**Version actuelle : v1.8.1**. Cette fiche est mise à jour à chaque nouvelle version.
 
 ## Sommaire
 1. [Multi-instance](#1-multi-instance)
@@ -76,7 +76,7 @@ Presets de base : **Anime Adventures** (8304191830) et **Grand Piece Online** (1
 | Action | Comment |
 |---|---|
 | Fermer tous les Roblox | Bouton **Fermer tous les Roblox**, ou clic droit sur l'icône ^ |
-| Nettoyage automatique | Un Roblox fermé avec la croix mais resté en arrière-plan est fermé pour de bon après 4 s |
+| Fermer un Roblox avec la croix | Le processus est arrêté pour de bon environ 1,5 s après, et le compteur baisse de 1 tout de suite |
 
 Roblox Studio n'est jamais fermé.
 
@@ -205,7 +205,8 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 ## 13. Historique des versions
 | Version | Nouveautés |
 |---|---|
-| **1.8.0** | Clic droit sur les comptes : lancer et disposer les fenêtres (grille, côte à côte, lignes, cascade), ranger les Roblox déjà ouverts |
+| **1.8.1** | La croix d'un Roblox ferme vraiment son processus (détection de la fenêtre de jeu), compteur mis à jour tout de suite |
+| 1.8.0 | Clic droit sur les comptes : lancer et disposer les fenêtres (grille, côte à côte, lignes, cascade), ranger les Roblox déjà ouverts |
 | 1.7.1 | Écran d'accueil re-téléchargé chaque jour pour détecter un changement de vidéo |
 | 1.7.0 | Anti-AFK, limites CPU / RAM, optimisation (mode efficacité, libération RAM), fenêtre Paramètres, écran d'accueil impossible à passer |
 | 1.6.1 | Fermeture automatique des Roblox restés en arrière-plan après la croix |

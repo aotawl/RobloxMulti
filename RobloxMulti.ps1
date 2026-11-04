@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '1.8.0'
+$AppVersion = '1.8.1'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -2788,33 +2788,74 @@ $cmbEco.Add_SelectedIndexChanged({ try { if ($cmbEco.SelectedIndex -ge 0 -and $c
 
 $ecoTimer = New-Object System.Windows.Forms.Timer
 $ecoTimer.Interval = 700
-# ------------------------------------------------------------ Roblox fermés mais restés en arrière-plan
+# ------------------------------------------------------------ Roblox fermés avec la croix
 # Quand on ferme un Roblox avec la croix, son processus reste parfois ouvert sans fenêtre.
-# Si un Roblox AVAIT une fenêtre et n'en a plus depuis 4 secondes, on le ferme pour de bon.
+# On surveille directement LA FENÊTRE DE JEU (classe "WINDOWSCLIENT" ou titre "Roblox") :
+# si un Roblox en avait une et n'en a plus depuis 1,5 s, on ferme le processus et le compteur baisse.
 # (Un Roblox qui démarre n'a pas encore de fenêtre : il n'est jamais touché.)
+try {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+namespace RML {
+    public static class GameWnd {
+        delegate bool EnumProc(IntPtr h, IntPtr l);
+        [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr l);
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+        [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder sb, int max);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder sb, int max);
+
+        // true si le processus a une fenêtre de jeu Roblox visible (même réduite)
+        public static bool Has(int pid) {
+            bool found = false;
+            EnumWindows(delegate (IntPtr h, IntPtr l) {
+                uint p; GetWindowThreadProcessId(h, out p);
+                if (p != (uint)pid || !IsWindowVisible(h)) return true;
+                StringBuilder c = new StringBuilder(64); GetClassName(h, c, 64);
+                StringBuilder t = new StringBuilder(64); GetWindowText(h, t, 64);
+                if (c.ToString() == "WINDOWSCLIENT" || t.ToString() == "Roblox") { found = true; return false; }
+                return true;
+            }, IntPtr.Zero);
+            return found;
+        }
+    }
+}
+'@
+} catch {}
+
 $script:rbxWin = @{}   # pid -> @{ HadWindow ; NoWinSince }
+
+function Test-GameWindow($p) {
+    if ('RML.GameWnd' -as [type]) { return [RML.GameWnd]::Has($p.Id) }
+    return ($p.MainWindowHandle -ne [IntPtr]::Zero)
+}
 
 function Stop-ClosedRoblox {
     $procs = @(Get-Process -Name $RobloxProc -ErrorAction SilentlyContinue)
     $alive = @{}
     $now = [DateTime]::UtcNow
+    $killed = $false
     foreach ($p in $procs) {
         $alive[$p.Id] = $true
         $st = $script:rbxWin[$p.Id]
         if (-not $st) { $st = @{ HadWindow = $false; NoWinSince = $null }; $script:rbxWin[$p.Id] = $st }
-        if ($p.MainWindowHandle -ne [IntPtr]::Zero) {
+        if (Test-GameWindow $p) {
             $st.HadWindow = $true
             $st.NoWinSince = $null
         } elseif ($st.HadWindow) {
             if (-not $st.NoWinSince) { $st.NoWinSince = $now }
-            elseif (($now - $st.NoWinSince).TotalSeconds -ge 4) {
-                try { $p.Kill() } catch {}
+            elseif (($now - $st.NoWinSince).TotalSeconds -ge 1.5) {
+                try { $p.Kill(); [void]$p.WaitForExit(2000) } catch {}
                 $script:rbxWin.Remove($p.Id)
                 $alive.Remove($p.Id)
+                $killed = $true
             }
         }
     }
     foreach ($id in @($script:rbxWin.Keys)) { if (-not $alive[$id]) { $script:rbxWin.Remove($id) } }
+    if ($killed) { try { $lblCount.Text = Get-CountText } catch {} }   # le compteur baisse tout de suite
 }
 
 $ecoTimer.Add_Tick({
