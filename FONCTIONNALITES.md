@@ -1,6 +1,6 @@
 # Roblox Multi Launcher : fiche des fonctionnalités
 
-**Version actuelle : v1.7.0**. Cette fiche est mise à jour à chaque nouvelle version.
+**Version actuelle : v1.7.1**. Cette fiche est mise à jour à chaque nouvelle version.
 
 ## Sommaire
 1. [Multi-instance](#1-multi-instance)
@@ -141,7 +141,7 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 - L'écran d'accueil **ne peut pas être passé** (ni clic, ni Échap, ni Alt+F4).
 - Un GIF joue une fois, une vidéo jusqu'au bout, et les deux s'arrêtent à `maxSeconds`.
 - Le média est téléchargé une seule fois puis gardé sur le PC, donc ça marche hors ligne.
-- Pour remplacer un fichier du dépôt, utilise **un nouveau nom**, sinon l'ancien reste en cache.
+- Le cache est vidé et re-téléchargé **une fois par jour**. Un fichier remplacé sur le dépôt sous le même nom apparaît donc au plus tard le lendemain. Avec un **nouveau nom**, c'est immédiat.
 
 ## 9. Mises à jour
 | Action | Comment |
@@ -190,7 +190,8 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 ## 13. Historique des versions
 | Version | Nouveautés |
 |---|---|
-| **1.7.0** | Anti-AFK, limites CPU / RAM, optimisation (mode efficacité, libération RAM), fenêtre Paramètres, écran d'accueil impossible à passer |
+| **1.7.1** | Écran d'accueil re-téléchargé chaque jour pour détecter un changement de vidéo |
+| 1.7.0 | Anti-AFK, limites CPU / RAM, optimisation (mode efficacité, libération RAM), fenêtre Paramètres, écran d'accueil impossible à passer |
 | 1.6.1 | Fermeture automatique des Roblox restés en arrière-plan après la croix |
 | 1.6.0 | Mode Économie (4 niveaux) |
 | 1.5.0 | Écran d'accueil choisi depuis GitHub (`splash.json`), message de mise à jour simplifié |

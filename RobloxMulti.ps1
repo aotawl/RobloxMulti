@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '1.7.0'
+$AppVersion = '1.7.1'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -2484,7 +2484,12 @@ function Show-StartupSplash {
         $state.Enabled = [bool]$remote.enabled -and [bool]$src
         if ($null -ne $remote.maxSeconds) { $state.MaxSeconds = [Math]::Min(30, [Math]::Max(1, [int]$remote.maxSeconds)) }
         if ($null -ne $remote.sound) { $state.Sound = [bool]$remote.sound }
-        if ($state.Enabled -and ($src -ne "$($state.Source)" -or -not $state.File -or -not (Test-Path -LiteralPath $state.File))) {
+        # Le média en cache est re-téléchargé une fois par jour, pour voir si la vidéo a changé sur GitHub
+        $expired = $true
+        if ($state.File -and (Test-Path -LiteralPath $state.File)) {
+            $expired = (([DateTime]::Now - (Get-Item -LiteralPath $state.File).LastWriteTime).TotalHours -ge 24)
+        }
+        if ($state.Enabled -and ($src -ne "$($state.Source)" -or $expired)) {
             try {
                 $file = Get-SplashMedia $src
                 Remove-OldSplashFiles $file
