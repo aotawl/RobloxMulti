@@ -1,5 +1,7 @@
 # Roblox Multi Launcher
 
+📋 **[Fiche de toutes les fonctionnalités](FONCTIONNALITES.md)**
+
 Lance plusieurs Roblox en même temps, avec plusieurs comptes, sans rien installer.
 
 ## Installation
