@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '1.8.1'
+$AppVersion = '1.8.2'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -2648,6 +2648,7 @@ function Show-SplashFile($file, $maxSec, $sound) {
 # Appelé au démarrage, avant d'afficher le launcher.
 # Lit splash.json sur GitHub ; si le GIF/la vidéo a changé, le télécharge une fois puis le garde en cache.
 function Show-StartupSplash {
+    $showNothing = $false
     Remove-Item -LiteralPath $OldSplashCfg -Force -ErrorAction SilentlyContinue
     $state = Get-SplashConfig
 
@@ -2675,12 +2676,17 @@ function Show-StartupSplash {
                 $file = Get-SplashMedia $src
                 Remove-OldSplashFiles $file
                 $state.Source = $src; $state.File = $file
-            } catch {}   # lien cassé ou pas d'internet : on garde l'ancien média s'il existe
+            } catch {
+                # Lien cassé ou pas d'internet :
+                # - même média qu'avant -> on garde celui en cache
+                # - NOUVEAU média qu'on n'arrive pas à télécharger -> on n'affiche pas l'ancien à la place
+                if ($src -ne "$($state.Source)") { $showNothing = $true }
+            }
         }
         try { Save-SplashConfig $state } catch {}
     }
 
-    if (-not $state.Enabled) { return }
+    if (-not $state.Enabled -or $showNothing) { return }
     try { Show-SplashFile $state.File $state.MaxSeconds $state.Sound } catch {}
 }
 
