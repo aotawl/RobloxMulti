@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '1.8.2'
+$AppVersion = '1.9.0'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -2659,6 +2659,14 @@ function Show-StartupSplash {
 
     if ($remote) {
         $src = "$($remote.source)".Trim()
+        # Si le robot GitHub a déjà copié ce lien sur le dépôt, on prend la copie (elle n'expire jamais,
+        # contrairement aux liens Discord). Sinon on essaie le lien directement.
+        if ($src -match '^https?://') {
+            try {
+                $lock = (Get-UrlText "$(Get-RawUrl 'splash.lock.json')?t=$([DateTime]::UtcNow.Ticks)" 4000) | ConvertFrom-Json
+                if ($lock -and "$($lock.source)".Trim() -eq $src -and "$($lock.file)") { $src = "$($lock.file)".Trim() }
+            } catch {}
+        }
         # Nom d'un fichier mis directement sur le dépôt (ex : splash.gif) -> lien GitHub
         if ($src -and $src -notmatch '^https?://') {
             $src = Get-RawUrl ((($src.TrimStart('/') -split '/') | ForEach-Object { [Uri]::EscapeDataString($_) }) -join '/')

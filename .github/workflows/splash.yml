@@ -1,0 +1,37 @@
+name: Copie de l'écran d'accueil
+
+# Dès que splash.json change, le GIF / la vidéo du lien est copié sur le dépôt
+# (les liens Discord expirent au bout d'environ 24 h, la copie non).
+on:
+  push:
+    paths:
+      - splash.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: splash
+  cancel-in-progress: true
+
+jobs:
+  copie:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Télécharger le média
+        run: python3 .github/scripts/mirror_splash.py
+      - name: Enregistrer sur le dépôt
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -A splash_media splash.lock.json 2>/dev/null || true
+          git add -A .
+          if git diff --cached --quiet; then
+            echo "Rien de nouveau."
+          else
+            git commit -m "Copie automatique de l'écran d'accueil"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git push
+          fi

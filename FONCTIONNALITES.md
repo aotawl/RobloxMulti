@@ -1,6 +1,6 @@
 # Roblox Multi Launcher : fiche des fonctionnalités
 
-**Version actuelle : v1.8.2**. Cette fiche est mise à jour à chaque nouvelle version.
+**Version actuelle : v1.9.0**. Cette fiche est mise à jour à chaque nouvelle version.
 
 ## Sommaire
 1. [Multi-instance](#1-multi-instance)
@@ -149,13 +149,15 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 | Réglage | Effet |
 |---|---|
 | `enabled` | `true` = affiché, `false` = pas d'écran d'accueil |
-| `source` | Nom d'un fichier mis sur le dépôt (ex : `Viktor.mp4`, **recommandé**), lien Tenor, Giphy, ou lien direct `.gif` / `.mp4`. ⚠️ Les liens **Discord expirent après environ 24 h** : upload plutôt le fichier sur le dépôt |
+| `source` | **N'importe quel lien** (Discord, Tenor, Giphy, lien direct `.gif` / `.mp4`) ou nom d'un fichier mis sur le dépôt (ex : `Viktor.mp4`) |
 | `sound` | Son des vidéos : `true` ou `false` |
 | `maxSeconds` | Durée max, de 1 à 30 s |
 
 - L'écran d'accueil **ne peut pas être passé** (ni clic, ni Échap, ni Alt+F4).
 - Un GIF joue une fois, une vidéo jusqu'au bout, et les deux s'arrêtent à `maxSeconds`.
 - Le média est téléchargé une seule fois puis gardé sur le PC, donc ça marche hors ligne.
+- **Robot GitHub** : dès que `splash.json` change, il télécharge le média du lien et en garde une copie dans `splash_media/` (avec `splash.lock.json`). Les liens Discord, qui expirent au bout d'environ 24 h, restent donc utilisables pour toujours. Il faut juste coller un lien **frais**, copié juste avant.
+- Suivre le robot : onglet **Actions** du dépôt → « Copie de l'écran d'accueil ». Une coche verte veut dire que c'est copié, une croix rouge que le lien est cassé ou expiré : recopie-le.
 - Si le nouveau média ne peut pas être téléchargé (lien cassé ou expiré), aucun écran d'accueil ne s'affiche. L'ancien n'est plus montré à la place.
 - Le cache est vidé et re-téléchargé **une fois par jour**. Un fichier remplacé sur le dépôt sous le même nom apparaît donc au plus tard le lendemain. Avec un **nouveau nom**, c'est immédiat.
 
@@ -206,7 +208,8 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 ## 13. Historique des versions
 | Version | Nouveautés |
 |---|---|
-| **1.8.2** | Si le nouvel écran d'accueil ne se télécharge pas, l'ancien n'est plus affiché à la place |
+| **1.9.0** | N'importe quel lien dans `source`, même Discord : un robot GitHub copie le média sur le dépôt pour qu'il n'expire jamais |
+| 1.8.2 | Si le nouvel écran d'accueil ne se télécharge pas, l'ancien n'est plus affiché à la place |
 | 1.8.1 | La croix d'un Roblox ferme vraiment son processus (détection de la fenêtre de jeu), compteur mis à jour tout de suite |
 | 1.8.0 | Clic droit sur les comptes : lancer et disposer les fenêtres (grille, côte à côte, lignes, cascade), ranger les Roblox déjà ouverts |
 | 1.7.1 | Écran d'accueil re-téléchargé chaque jour pour détecter un changement de vidéo |
