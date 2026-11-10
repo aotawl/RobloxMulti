@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '2.0.3'
+$AppVersion = '2.0.4'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -3412,12 +3412,13 @@ namespace RML {
             Tpl t;
             if (s == null || s.Bmp == null || !Tpls.TryGetValue(name, out t)) return hit;
 
-            // 1) recherche grossière (image réduite à 360 px de haut), 10 tailles de bouton
+            // 1) recherche grossière (image réduite à 360 px de haut), 19 tailles de bouton (x0,4 à x2,2) :
+            //    le jeu agrandit ses boutons dans une fenêtre large (plein écran)
             int w1;
             float[] I1 = Level(s, L1, out w1);
             List<double[]> cands = new List<double[]>();
-            for (int i = 0; i < 10; i++) {
-                double k = 0.5 + 0.1 * i;
+            for (int i = 0; i < 19; i++) {
+                double k = 0.4 + 0.1 * i;
                 int tw = (int)Math.Round(t.Img.Width * (double)L1 / t.RefH * k);
                 int th = (int)Math.Round(t.Img.Height * (double)L1 / t.RefH * k);
                 if (tw < 6 || th < 6 || tw > w1 || th > L1) continue;
@@ -3887,7 +3888,7 @@ W9g12cHjXPMUnD3TrntrXOw/bZG+RzFUztCwYzO5QzPUroncPAXHWnCcBdvMGEBQ5oSnLlM/7mY+X2dy
 75YtJ/LFNvRmlKuVU6FiM43ysOYrQ29GuWFfkXhPG/aVARv2lWFfGfDNaV8Za+Lg2CEy+8rQm1FesZwy1sShysOKDzX0ZpT7lxv2lTrsC6SDIW6VguXxNoau
 DNiwr0hhl+Q3LyF12C1CQ1cGrAozhsuJan6tFEgyZGmtPcELNxD0YeTVO6cMFajmbhluPqwTW7p2P2voyshV8/8HS8DhHuFNyUsAAAAASUVORK5CYII=
 '@ },
-    @{ N = 'next'; H = 1331; R = @(0.10, 0.40, 0.75, 0.85); T = 0.80; B = @'
+    @{ N = 'next'; H = 1331; R = @(0.10, 0.40, 0.75, 0.85); T = 0.85; B = @'
 iVBORw0KGgoAAAANSUhEUgAAAKkAAAA6CAIAAABERe6VAAASG0lEQVR42u1deZgU1bX/nVtbbzM9Gz3MMCKbIjxACOrnQlyeGiNRjLt5SYzi8gQXVMR8Jk8T
 giZBkghxSwyLkJCoTyMiBkTRaDAgEEBEQIQBZIaZYdbu6a26q+q8P6q6p7tnGN576jCOfb/5zpz+3dtVt865y7nnnltNXq8XgBBCVVVJkpBPfTeZpplIJCzL
 sj+S1+uVZVnTNAAg9o3XK6+Pl30zqRQyA0RgztMvMTVDdHilUvdHV/hfGpgA6LpuGAYA8vv9tuLdI/VxL4WUYna+BhCQ5/sMn2yhrVcXxnZoafVLfr8fQPFF
@@ -3942,7 +3943,7 @@ CG5UAMiNr7hKLkiQNxEoU2rqpITZ1XtYkYrGyONfWlwRCPQz4U2AcXiZC4Ac3aEZbST72RWIDoCnrkGK
 TT7RSh9P88e2uwHE43HTNMnj8SiKYv9UFhO7T9LLLo4XTUhKXs5Lrg/wZpja3lObVmrxXc5vpNmKZ2byeDzp30aU5V60zZxPn3syDCPztxH/B9YUpEzfkZav
 AAAAAElFTkSuQmCC
 '@ },
-    @{ N = 'nextd'; H = 1354; R = @(0.10, 0.40, 0.75, 0.85); T = 0.80; B = @'
+    @{ N = 'nextd'; H = 1354; R = @(0.10, 0.40, 0.75, 0.85); T = 0.85; B = @'
 iVBORw0KGgoAAAANSUhEUgAAAKgAAAA5CAIAAAAtE/cFAAAR00lEQVR42u1de3hU1bX/rX1eM5NJJi8mJEQERBEuoBT1q5b6uGqtVLHis7etVXxcwQcqYj/b
 aotoW6StUF+tFRBaWvVqRcSCKFotFgULiAiIEEASSMhzJvM6c87Z6/5xZpKZSQi9V4UYZ3/51rfmd9acs2etffZee611TqigoEBVVcMwAIDYP9asuipR/k1L
 K2IGiMCcp19g6oTpwHJt/x89kX8ZYAJgmqZt2xQIBFyre0eYY54PayWc+g5AQJ7vM7zVQhsvK4pvMVzbK4FAAEDJebExL7QLD+DKoZuWx7/QuOLFgB+Y4c2U
