@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '2.0.6'
+$AppVersion = '2.0.7'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -2898,6 +2898,7 @@ $ecoTimer.Add_Tick({
     try { Stop-ClosedRoblox } catch {}
     try { Update-Economy } catch {}
     try { Update-Optimizations } catch {}
+    try { Update-AfkActivity } catch {}
 })
 
 # ------------------------------------------------------------ paramètres : anti-AFK, limites CPU/RAM, optimisation
@@ -3033,35 +3034,54 @@ namespace RML {
             return (uint)Environment.TickCount - li.dwTime;
         }
 
-        static void Focus(IntPtr h) {
-            uint me = GetCurrentThreadId();
-            uint fg = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);
-            bool att = fg != 0 && fg != me && AttachThreadInput(me, fg, true);
-            SetForegroundWindow(h); BringWindowToTop(h);
-            if (att) AttachThreadInput(me, fg, false);
+        // Met la fenêtre au premier plan et VÉRIFIE que ça a marché (plein écran compris)
+        public static bool Focus(IntPtr h) {
+            if (GetForegroundWindow() == h) return true;
+            for (int i = 0; i < 3; i++) {
+                uint me = GetCurrentThreadId();
+                uint fg = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);
+                bool att = fg != 0 && fg != me && AttachThreadInput(me, fg, true);
+                SetForegroundWindow(h); BringWindowToTop(h);
+                if (att) AttachThreadInput(me, fg, false);
+                Thread.Sleep(120);
+                if (GetForegroundWindow() == h) return true;
+                // secours : un appui sur Alt autorise Windows à changer de fenêtre
+                keybd_event(0x12, 0x38, 0, IntPtr.Zero);
+                SetForegroundWindow(h); BringWindowToTop(h);
+                keybd_event(0x12, 0x38, 2, IntPtr.Zero);
+                Thread.Sleep(150);
+                if (GetForegroundWindow() == h) return true;
+            }
+            return false;
         }
 
         // action : 0 = clic droit au centre (ne fait rien en jeu), 1 = saut (Espace)
-        public static void Nudge(IntPtr hwnd, int action) {
+        // Renvoie true si la fenêtre a bien reçu l'action.
+        public static bool Nudge(IntPtr hwnd, int action) {
             IntPtr prev = GetForegroundWindow();
             Pt cur; GetCursorPos(out cur);
             bool wasMin = IsIconic(hwnd);
-            if (wasMin) { ShowWindow(hwnd, 9); Thread.Sleep(250); }   // SW_RESTORE
-            Focus(hwnd);
-            Thread.Sleep(200);
-            if (action == 1) {
-                keybd_event(0x20, 0x39, 0, IntPtr.Zero); Thread.Sleep(80);
-                keybd_event(0x20, 0x39, 2, IntPtr.Zero);
-            } else {
+            if (wasMin) { ShowWindow(hwnd, 9); Thread.Sleep(700); }   // SW_RESTORE (le plein écran met du temps à revenir)
+            bool ok = Focus(hwnd);
+            if (ok) {
+                Thread.Sleep(250);
                 Rc r; GetWindowRect(hwnd, out r);
-                SetCursorPos((r.L + r.R) / 2, (r.T + r.B) / 2); Thread.Sleep(30);
-                mouse_event(0x0008, 0, 0, 0, IntPtr.Zero); Thread.Sleep(60);   // clic droit
-                mouse_event(0x0010, 0, 0, 0, IntPtr.Zero);
+                SetCursorPos((r.L + r.R) / 2, (r.T + r.B) / 2); Thread.Sleep(40);
+                mouse_event(0x0001, 4, 0, 0, IntPtr.Zero); Thread.Sleep(30);    // petit mouvement de souris
+                mouse_event(0x0001, -4, 0, 0, IntPtr.Zero); Thread.Sleep(40);
+                if (action == 1) {
+                    keybd_event(0x20, 0x39, 0, IntPtr.Zero); Thread.Sleep(80);
+                    keybd_event(0x20, 0x39, 2, IntPtr.Zero);
+                } else {
+                    mouse_event(0x0008, 0, 0, 0, IntPtr.Zero); Thread.Sleep(70);   // clic droit
+                    mouse_event(0x0010, 0, 0, 0, IntPtr.Zero);
+                }
+                Thread.Sleep(150);
+                SetCursorPos(cur.X, cur.Y);
             }
-            Thread.Sleep(120);
-            SetCursorPos(cur.X, cur.Y);
             if (wasMin) ShowWindow(hwnd, 6);                                   // SW_MINIMIZE
             if (prev != IntPtr.Zero && prev != hwnd) Focus(prev);
+            return ok;
         }
     }
 }
@@ -3102,7 +3122,7 @@ function Update-Optimizations {
         if (-not $script:jobbed.ContainsKey($p.Id)) { $script:jobbed[$p.Id] = $true; try { [void][RML.Perf]::Assign($p.Id) } catch {} }
 
         $isFg = ($p.Id -eq $fg)
-        if ($isFg -or -not $script:lastFg.ContainsKey($p.Id)) { $script:lastFg[$p.Id] = $now }
+        if (-not $script:lastFg.ContainsKey($p.Id)) { $script:lastFg[$p.Id] = $now }
 
         # mode efficacité seulement en arrière-plan
         $wantEff = ($o.EffOn -and -not $isFg)
@@ -3120,21 +3140,67 @@ function Update-Optimizations {
 }
 
 # Anti-AFK : vérifié toutes les 5 s
+$script:synthUntil = [DateTime]::MinValue   # jusqu'à quand la dernière saisie vient de l'appli (pas de toi)
+$script:afkStatus = 'Aucune action pour le moment'
+$script:afkWarned = @{}
+
+# Un Roblox est « actif » seulement s'il est au premier plan ET que TU as touché la souris ou le
+# clavier il y a moins de 3 s. Un Roblox laissé devant toi pendant que tu es parti n'est PAS actif.
+function Update-AfkActivity {
+    if (-not ('RML.Afk' -as [type])) { return }
+    $now = [DateTime]::UtcNow
+    $idle = [RML.Afk]::IdleMs()
+    $inputAt = $now.AddMilliseconds(-[double]$idle)
+    $genuine = ($idle -lt 3000) -and ($inputAt -gt $script:synthUntil)
+    $fg = Get-ForegroundPid
+    foreach ($p in @(Get-Process -Name $RobloxProc -ErrorAction SilentlyContinue)) {
+        if (-not $script:lastFg.ContainsKey($p.Id)) { $script:lastFg[$p.Id] = $now; continue }
+        if ($genuine -and $p.Id -eq $fg) { $script:lastFg[$p.Id] = $now }
+    }
+}
+
+function Get-GameHwnd($p) {
+    $h = [IntPtr]::Zero
+    try { if ('RML.GameWnd' -as [type]) { $h = [RML.GameWnd]::Get($p.Id) } } catch {}
+    if ($h -eq [IntPtr]::Zero) { $h = $p.MainWindowHandle }
+    return $h
+}
+
 function Update-AntiAfk {
     if (-not $script:opts.AfkOn -or -not ('RML.Afk' -as [type])) { return }
-    if ($script:macroBusy -or ($script:macro -and ($script:macro.Captcha -or $script:macro.Exclusive))) { return }   # la macro a la main
+    if ($script:macroBusy) { return }
     $now = [DateTime]::UtcNow
     $limit = [double]$script:opts.AfkMinutes
+    $idleMs = [RML.Afk]::IdleMs()
+    $macroLock = ($script:macro -and ($script:macro.Captcha -or $script:macro.Exclusive))
     foreach ($p in @(Get-Process -Name $RobloxProc -ErrorAction SilentlyContinue)) {
-        if ($p.MainWindowHandle -eq [IntPtr]::Zero) { continue }
+        $hwnd = Get-GameHwnd $p
+        if ($hwnd -eq [IntPtr]::Zero) { continue }
         $last = $script:lastFg[$p.Id]
         if (-not $last) { $script:lastFg[$p.Id] = $now; continue }
         $mins = ($now - $last).TotalMinutes
         if ($mins -lt $limit) { continue }
-        # on attend que tu ne tapes/bouges pas (1,5 s) pour ne pas te gêner, sauf si le kick approche
-        if ([RML.Afk]::IdleMs() -lt 1500 -and $mins -lt 18.5) { continue }
-        try { [RML.Afk]::Nudge($p.MainWindowHandle, [int]$script:opts.AfkAction) } catch {}
-        $script:lastFg[$p.Id] = [DateTime]::UtcNow
+        $urgent = ($mins -ge 18.5)   # le kick approche : on agit quoi qu'il arrive
+        # pour ne pas te gêner : on attend que tu ne tapes/bouges pas depuis 1,5 s
+        if (-not $urgent -and $idleMs -lt 1500) { continue }
+        # pendant un captcha (ou quand Z est enfoncé) : on attend 5 s sans saisie de ta part
+        if ($macroLock -and -not $urgent -and $idleMs -lt 5000) { continue }
+        $ok = $false
+        try { $ok = [RML.Afk]::Nudge($hwnd, [int]$script:opts.AfkAction) } catch {}
+        $script:synthUntil = [DateTime]::UtcNow.AddSeconds(1.5)
+        $heure = (Get-Date).ToString('HH:mm')
+        if ($ok) {
+            $script:lastFg[$p.Id] = [DateTime]::UtcNow
+            $script:afkWarned.Remove($p.Id)
+            $script:afkStatus = "$heure : Roblox (PID $($p.Id)) relancé, OK"
+        } else {
+            # pas réussi à passer sur ce Roblox : on réessaie au prochain tour (5 s)
+            $script:afkStatus = "$heure : échec sur Roblox (PID $($p.Id)), nouvel essai..."
+            if ($urgent -and -not $script:afkWarned[$p.Id]) {
+                $script:afkWarned[$p.Id] = $true
+                try { $tray.ShowBalloonTip(6000, 'Anti-AFK', "Je n'arrive pas à passer sur un Roblox (PID $($p.Id)). Clique dessus une fois pour éviter le kick.", [System.Windows.Forms.ToolTipIcon]::Warning) } catch {}
+            }
+        }
     }
 }
 
@@ -3146,7 +3212,7 @@ function Show-OptionsDialog {
     $o = Get-Options
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = 'Paramètres'
-    $dlg.ClientSize = New-Object System.Drawing.Size(430, 380)
+    $dlg.ClientSize = New-Object System.Drawing.Size(430, 402)
     $dlg.FormBorderStyle = 'FixedDialog'
     $dlg.MaximizeBox = $false; $dlg.MinimizeBox = $false
     $dlg.StartPosition = 'CenterParent'
@@ -3168,7 +3234,7 @@ function Show-OptionsDialog {
     # --- Anti-AFK
     $gA = New-Object System.Windows.Forms.GroupBox
     $gA.Text = 'Anti-AFK (évite le kick au bout de 20 min)'
-    $gA.SetBounds(10, 8, 410, 105)
+    $gA.SetBounds(10, 8, 410, 127)
     $dlg.Controls.Add($gA)
     $cbAfk = New-Object System.Windows.Forms.CheckBox
     $cbAfk.Text = 'Activer'; $cbAfk.Checked = [bool]$o.AfkOn; $cbAfk.SetBounds(12, 22, 100, 22); $gA.Controls.Add($cbAfk)
@@ -3181,11 +3247,12 @@ function Show-OptionsDialog {
     $cmbAct.SelectedIndex = [Math]::Min(1, [Math]::Max(0, [int]$o.AfkAction))
     $cmbAct.SetBounds(12, 74, 170, 24); $gA.Controls.Add($cmbAct)
     [void](New-Lbl $gA 'La fenêtre passe devant 0,5 s puis revient.' 190 77 215 $true)
+    [void](New-Lbl $gA "Dernière action : $($script:afkStatus)" 12 101 390 $true)
 
     # --- Limites
     $gL = New-Object System.Windows.Forms.GroupBox
     $gL.Text = 'Limites (tous les Roblox ensemble)'
-    $gL.SetBounds(10, 120, 410, 105)
+    $gL.SetBounds(10, 142, 410, 105)
     $dlg.Controls.Add($gL)
     $cbCpu = New-Object System.Windows.Forms.CheckBox
     $cbCpu.Text = 'CPU max :'; $cbCpu.Checked = [bool]$o.CpuOn; $cbCpu.SetBounds(12, 24, 90, 22); $gL.Controls.Add($cbCpu)
@@ -3202,7 +3269,7 @@ function Show-OptionsDialog {
     # --- Optimisation
     $gO = New-Object System.Windows.Forms.GroupBox
     $gO.Text = 'Optimisation des Roblox en arrière-plan'
-    $gO.SetBounds(10, 232, 410, 95)
+    $gO.SetBounds(10, 254, 410, 95)
     $dlg.Controls.Add($gO)
     $cbEff = New-Object System.Windows.Forms.CheckBox
     $cbEff.Text = 'Mode efficacité Windows (moins de chauffe et de conso)'; $cbEff.Checked = [bool]$o.EffOn
@@ -3213,10 +3280,10 @@ function Show-OptionsDialog {
     [void](New-Lbl $gO "Le Roblox que tu utilises n'est jamais ralenti. Voir aussi la liste « Économie »." 12 70 395 $true)
 
     $ok = New-Object System.Windows.Forms.Button
-    $ok.Text = 'Enregistrer'; $ok.DialogResult = 'OK'; $ok.SetBounds(225, 340, 95, 30)
+    $ok.Text = 'Enregistrer'; $ok.DialogResult = 'OK'; $ok.SetBounds(225, 362, 95, 30)
     $dlg.Controls.Add($ok); $dlg.AcceptButton = $ok
     $cancel = New-Object System.Windows.Forms.Button
-    $cancel.Text = 'Annuler'; $cancel.DialogResult = 'Cancel'; $cancel.SetBounds(325, 340, 95, 30)
+    $cancel.Text = 'Annuler'; $cancel.DialogResult = 'Cancel'; $cancel.SetBounds(325, 362, 95, 30)
     $dlg.Controls.Add($cancel); $dlg.CancelButton = $cancel
 
     if ($form.Visible) { $res = $dlg.ShowDialog($form) } else { $res = $dlg.ShowDialog() }
@@ -4455,6 +4522,10 @@ function Invoke-MacroTick {
     else { $m.Idx = ($m.Idx + 1) % $m.Windows.Count; $w = $m.Windows[$m.Idx] }
     $script:macroBusy = $true
     try { Step-MacroWindow $w } catch { $w.Info = "Erreur : $($_.Exception.Message)" } finally { $script:macroBusy = $false }
+    if ($w.LastInput -and ([DateTime]::UtcNow - $w.LastInput).TotalSeconds -lt 3) {
+        $script:lastFg[$w.Pid] = $w.LastInput
+        $script:synthUntil = [DateTime]::UtcNow.AddSeconds(1.5)
+    }
 }
 
 # Pendant un captcha : dès que tu appuies sur Entrée dans la fenêtre, on clique sur Submit

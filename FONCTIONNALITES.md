@@ -1,6 +1,6 @@
 # Roblox Multi Launcher : fiche des fonctionnalités
 
-**Version actuelle : v2.0.6**. Cette fiche est mise à jour à chaque nouvelle version.
+**Version actuelle : v2.0.7**. Cette fiche est mise à jour à chaque nouvelle version.
 
 ## Sommaire
 1. [Multi-instance](#1-multi-instance)
@@ -109,7 +109,10 @@ S'ouvre avec le lien **Paramètres** en bas du launcher, ou avec un clic droit s
 | Fréquence | Une action toutes les **1 à 18 min** d'inactivité (15 par défaut) |
 | Type d'action | **Clic droit** (recommandé, ne fait rien en jeu) ou **Saut (Espace)** |
 
-- La fenêtre passe devant pendant environ 0,5 s, puis tu reviens sur ce que tu faisais.
+- Un Roblox compte comme « utilisé » seulement si **tu** touches la souris ou le clavier dessus. Un Roblox laissé au premier plan (plein écran compris) pendant que tu es parti est protégé aussi.
+- La fenêtre passe devant pendant environ 0,5 s, puis tu reviens sur ce que tu faisais. Ça marche avec des Roblox en plein écran ou réduits.
+- Si le passage sur un Roblox échoue, l'anti-AFK réessaie toutes les 5 s. Si le kick approche, une notification te demande de cliquer dessus.
+- **Paramètres** affiche la dernière action de l'anti-AFK (OK ou échec), pour vérifier qu'il tourne.
 - L'anti-AFK attend que tu ne tapes pas, sauf si le kick approche.
 - Ça marche aussi pour les fenêtres réduites.
 
@@ -244,7 +247,8 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 ## 13. Historique des versions
 | Version | Nouveautés |
 |---|---|
-| **2.0.6** | Macro : Entrée au captcha détecté de façon fiable (surveillance toutes les 5 ms), Submit recliqué une fois si besoin, reprise immédiate des autres comptes |
+| **2.0.7** | Anti-AFK corrigé : Roblox laissé au premier plan protégé, clics de l'appli pas comptés comme ton activité, bonne fenêtre visée, passage au premier plan vérifié (plein écran), actif aussi pendant un captcha de la macro |
+| 2.0.6 | Macro : Entrée au captcha détecté de façon fiable (surveillance toutes les 5 ms), Submit recliqué une fois si besoin, reprise immédiate des autres comptes |
 | 2.0.5 | Macro : au captcha, la fenêtre clignote dans la barre des tâches et F5 est appuyé (option) |
 | 2.0.4 | Macro : écrans reconnus aussi en plein écran large (boutons agrandis jusqu'à 2,2×) |
 | 2.0.3 | Macro : au captcha, tape les chiffres puis Entrée, la macro clique sur Submit |
