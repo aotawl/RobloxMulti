@@ -1,6 +1,6 @@
 # Roblox Multi Launcher : fiche des fonctionnalités
 
-**Version actuelle : v2.0.7**. Cette fiche est mise à jour à chaque nouvelle version.
+**Version actuelle : v2.1.0**. Cette fiche est mise à jour à chaque nouvelle version.
 
 ## Sommaire
 1. [Multi-instance](#1-multi-instance)
@@ -141,12 +141,26 @@ S'ouvre avec le lien **Macro Anime Adventures** en bas du launcher, avec un clic
 3. Garde **Z enfoncé** pour faire avancer le perso (la touche marquée Z sur **ton** clavier, AZERTY compris, modifiable) jusqu'à ce que « Join Matchmaking » apparaisse. Pendant ce temps, la macro reste sur cette fenêtre
 4. Clique sur **Find Match**
 5. **Captcha** : notification avec son, la fenêtre **clignote dans la barre des tâches**, la macro appuie sur **F5** (option), puis la fenêtre passe devant avec le curseur dans la case. **Tu tapes juste les chiffres puis Entrée** : la macro clique sur **Submit** pour toi
-6. Attend la fin de la partie (**sans limite de temps**), victoire ou défaite
-7. Clique sur **Next**, puis fait les clics pour les récompenses (5 par défaut)
-8. Clique sur **Return to lobby**, attend le chargement du lobby, et recommence
+6. **Place les persos** (option, voir ci-dessous)
+7. Attend la fin de la partie (**sans limite de temps**), victoire ou défaite
+8. Clique sur **Next**, puis fait les clics pour les récompenses (5 par défaut)
+9. Clique sur **Return to lobby**, attend le chargement du lobby, et recommence
+
+**Placement des persos** (une fois par partie, dès que le perso est sur la map) :
+1. Appuie sur **F** pour ouvrir l'**Unit Overview** et compte les persos déjà posés (un bouton bleu « First » par perso)
+2. **Dézoome à la molette** et tourne la **caméra vers le sol** (clic droit maintenu en glissant)
+3. Appuie sur **2** (sélectionne le perso), puis **clic gauche** pour le poser. Ça essaie 42 endroits de l'écran, du centre vers les bords, en recomptant après chaque essai. Si un essai rate, un clic droit annule la sélection
+4. S'arrête dès que **2 persos** sont posés. Après tout l'écran, **1 perso posé**, c'est bon aussi
+5. **Aucun perso posé** après tout l'écran : déplace le perso avec **Z, S, Q, D** (ton AZERTY) puis recommence, jusqu'à 4 fois. Si rien ne passe (souvent pas assez d'argent au début), nouvel essai 1 minute plus tard
+6. Rappuie sur **F** pour refermer l'Unit Overview
+
+Pendant le placement, la macro reste sur cette fenêtre. Ça prend environ 1 minute par passage sur tout l'écran.
 
 | Action | Comment |
 |---|---|
+| Activer / désactiver le placement | Case **Placer des persos** (cochée par défaut) |
+| Touche du perso | Case **touche** : le chiffre de la barre des persos (2 par défaut) |
+| Nombre de persos | Case **nombre** : de 1 à 6 (2 par défaut) |
 | Choisir les fenêtres | Coche les fenêtres Roblox dans la liste (**Rafraîchir** si tu viens d'en ouvrir) |
 | Retrouver une fenêtre | Sélectionne-la → **Montrer** |
 | Vérifier que la macro voit bien l'écran | Sélectionne une fenêtre → **Tester la détection** : affiche ce qui est reconnu, et enregistre une capture `macro_capture.png` sur le Bureau |
@@ -247,7 +261,8 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 ## 13. Historique des versions
 | Version | Nouveautés |
 |---|---|
-| **2.0.7** | Anti-AFK corrigé : Roblox laissé au premier plan protégé, clics de l'appli pas comptés comme ton activité, bonne fenêtre visée, passage au premier plan vérifié (plein écran), actif aussi pendant un captcha de la macro |
+| **2.1.0** | Macro : placement automatique des persos (F, dézoom, caméra vers le sol, touche 2 + clic, comptage dans l'Unit Overview, déplacement ZQSD si besoin) |
+| 2.0.7 | Anti-AFK corrigé : Roblox laissé au premier plan protégé, clics de l'appli pas comptés comme ton activité, bonne fenêtre visée, passage au premier plan vérifié (plein écran), actif aussi pendant un captcha de la macro |
 | 2.0.6 | Macro : Entrée au captcha détecté de façon fiable (surveillance toutes les 5 ms), Submit recliqué une fois si besoin, reprise immédiate des autres comptes |
 | 2.0.5 | Macro : au captcha, la fenêtre clignote dans la barre des tâches et F5 est appuyé (option) |
 | 2.0.4 | Macro : écrans reconnus aussi en plein écran large (boutons agrandis jusqu'à 2,2×) |

@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '2.0.7'
+$AppVersion = '2.1.0'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -3474,6 +3474,52 @@ namespace RML {
             }
         }
 
+        // Compte combien de fois un bouton apparaît (ex : un bouton « First » par perso posé)
+        public static int Count(Shot s, string name) {
+            Tpl t;
+            if (s == null || s.Bmp == null || !Tpls.TryGetValue(name, out t)) return 0;
+            Hit best = Find(s, name);
+            if (best.Score < t.Thr) return 0;
+            int w1;
+            float[] I = Level(s, L1, out w1);
+            int tw = (int)Math.Round(t.Img.Width * (double)L1 / t.RefH * best.K);
+            int th = (int)Math.Round(t.Img.Height * (double)L1 / t.RefH * best.K);
+            if (tw < 6 || th < 6) return 1;
+            int x0 = (int)(t.X1 * w1), y0 = (int)(t.Y1 * L1);
+            int x1 = Math.Min((int)(t.X2 * w1), w1) - tw, y1 = Math.Min((int)(t.Y2 * L1), L1) - th;
+            if (x1 < x0 || y1 < y0) return 1;
+            float[] T = TGray(t, name, tw, th);
+            int n = tw * th;
+            double tm = 0; for (int i = 0; i < n; i++) tm += T[i]; tm /= n;
+            float[] Tz = new float[n]; double tn = 0;
+            for (int i = 0; i < n; i++) { Tz[i] = (float)(T[i] - tm); tn += Tz[i] * Tz[i]; }
+            tn = Math.Sqrt(tn);
+            if (tn < 1e-3) return 1;
+            double thr = t.Thr - 0.08;
+            List<double[]> peaks = new List<double[]>();
+            for (int y = y0; y <= y1; y++) {
+                for (int x = x0; x <= x1; x++) {
+                    double sm = 0, s2 = 0, c = 0;
+                    for (int ty = 0; ty < th; ty++) {
+                        int ib = (y + ty) * w1 + x, tb = ty * tw;
+                        for (int tx = 0; tx < tw; tx++) { float v = I[ib + tx]; sm += v; s2 += v * v; c += v * Tz[tb + tx]; }
+                    }
+                    double var = s2 - sm * sm / n;
+                    if (var < 1e-3) continue;
+                    double sc = c / (Math.Sqrt(var) * tn);
+                    if (sc >= thr) peaks.Add(new double[] { sc, x, y });
+                }
+            }
+            peaks.Sort(delegate (double[] a, double[] b) { return b[0].CompareTo(a[0]); });
+            List<double[]> kept = new List<double[]>();
+            foreach (double[] pk in peaks) {
+                bool far = true;
+                foreach (double[] k in kept) if (Math.Abs(pk[1] - k[1]) <= tw * 0.6 && Math.Abs(pk[2] - k[2]) <= th * 0.6) { far = false; break; }
+                if (far) kept.Add(pk);
+            }
+            return Math.Max(1, kept.Count);
+        }
+
         public static Hit Find(Shot s, string name) {
             Hit hit = new Hit();
             Tpl t;
@@ -3659,6 +3705,35 @@ namespace RML {
         }
 
         public static bool IsDown(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
+
+        // Molette (négatif = vers toi = dézoom dans Roblox)
+        public static void Wheel(IntPtr h, int x, int y, int notches) {
+            IntPtr old = Vision.DpiOn();
+            try {
+                Focus(h);
+                MPoint p = new MPoint(); p.X = x; p.Y = y;
+                Vision.ClientToScreen(h, ref p);
+                SetCursorPos(p.X, p.Y); Thread.Sleep(60);
+                int step = notches < 0 ? -1 : 1;
+                for (int i = 0; i < Math.Abs(notches); i++) { mouse_event(0x0800, 0, 0, unchecked((uint)(step * 120)), IntPtr.Zero); Thread.Sleep(40); }
+            } finally { Vision.DpiOff(old); }
+        }
+
+        // Clic droit maintenu + souris vers le bas : la caméra regarde le sol
+        public static void DragRight(IntPtr h, int x, int y, int dy) {
+            IntPtr old = Vision.DpiOn();
+            try {
+                Focus(h);
+                MPoint p = new MPoint(); p.X = x; p.Y = y;
+                Vision.ClientToScreen(h, ref p);
+                SetCursorPos(p.X, p.Y); Thread.Sleep(60);
+                mouse_event(0x0008, 0, 0, 0, IntPtr.Zero); Thread.Sleep(60);
+                int steps = Math.Max(1, Math.Abs(dy) / 10), d = dy < 0 ? -10 : 10;
+                for (int i = 0; i < steps; i++) { mouse_event(0x0001, 0, d, 0, IntPtr.Zero); Thread.Sleep(8); }
+                Thread.Sleep(60);
+                mouse_event(0x0010, 0, 0, 0, IntPtr.Zero); Thread.Sleep(60);
+            } finally { Vision.DpiOff(old); }
+        }
         public static bool IsForeground(IntPtr h) { return GetForegroundWindow() == h; }
 
         [StructLayout(LayoutKind.Sequential)] struct FlashInfo { public uint cbSize; public IntPtr hwnd; public uint dwFlags; public uint uCount; public uint dwTimeout; }
@@ -4270,10 +4345,127 @@ MyPLCZbkM1xSHV5g9EIyz+oYxumBxxfSn4BSUAIxYHOmUPEqXsWr+BC8jkduCrLSBZLqgN4jN+SUzEly
 RFE91q/CKqzCoffBEWg5mHVIMYvmJIHq3cF9qKA+se7QHnnEQgCSmZkp8qTv+3W6PK9qTFdzNVfzjs2dZdy+u1KJO3DDI+Ohe+9Ms+7U+m4FU3M1V3M175Dc
 ukMb1DUAWKPRCICIaFitd1s5yxmuaHeqqLAKq7AKxwaXzrVUzDWSwN2zbjdDkpNzNBrZZbRmkn1DS9ZEmzoPVHM1V/NEcqBqsbH6SyOaJb3idjNWq/b/ASnR
 S4qCQtv/AAAAAElFTkSuQmCC
+'@ },
+    @{ N = 'overview'; H = 660; R = @(0.55, 0.00, 1.00, 0.30); T = 0.80; B = @'
+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
+gO3vtqMAAAAASUVORK5CYII=
+'@ },
+    @{ N = 'first'; H = 662; R = @(0.60, 0.08, 1.00, 0.95); T = 0.80; B = @'
+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
 '@ }
 )
 
-$script:macro = @{ Running = $false; Windows = (New-Object System.Collections.ArrayList); Idx = -1; Captcha = $null; RewardClicks = 5; Sound = $true; Key = 'Z'; Exclusive = $null; F5 = $true }
+$script:macro = @{ Running = $false; Windows = (New-Object System.Collections.ArrayList); Idx = -1; Captcha = $null; RewardClicks = 5; Sound = $true; Key = 'Z'; Exclusive = $null; F5 = $true; PlaceOn = $true; PlaceKey = '2'; PlaceTarget = 2 }
 $script:macroBusy = $false
 $script:macroForm = $null
 
@@ -4311,6 +4503,7 @@ function Stop-MHold($w) {
 
 function Set-MState($w, $state, $info) {
     if ($w.State -eq 'Matchmaking' -and $state -ne 'Matchmaking') { Stop-MHold $w }
+    if ($w.State -eq 'Place' -and $state -ne 'Place' -and $script:macro.Exclusive -eq $w) { $script:macro.Exclusive = $null }
     $w.State = $state
     $w.Since = [DateTime]::UtcNow
     if ($info) { $w.Info = $info }
@@ -4336,6 +4529,20 @@ function Send-CaptchaAlert($w) {
         $tray.ShowBalloonTip(6000, 'Captcha à remplir',
             "$($w.Name) : tape le code dans la case, puis appuie sur Entrée.", [System.Windows.Forms.ToolTipIcon]::Warning)
     } catch {}
+}
+
+# Points où essayer de poser un perso (en % de la fenêtre), du centre vers les bords.
+# On évite : l'Unit Overview (à droite), la barre des persos (en bas), les menus (en haut et à gauche).
+$script:placePoints = @(
+    foreach ($y in 0.22, 0.33, 0.44, 0.55, 0.66, 0.77) { foreach ($x in 0.12, 0.20, 0.28, 0.36, 0.44, 0.52, 0.60) { ,@($x, $y) } }
+) | Sort-Object { [Math]::Pow($_[0] - 0.40, 2) + [Math]::Pow(($_[1] - 0.50) * 0.8, 2) }
+
+function Get-DigitKey($d) {
+    # touche du chiffre sur la rangée du haut (même endroit en AZERTY et en QWERTY)
+    $n = [int]"$d"
+    $vk = 0x30 + $n
+    $scan = if ($n -eq 0) { 0x0B } else { 0x01 + $n }
+    return @($vk, $scan)
 }
 
 # Une étape pour une fenêtre : on regarde l'écran et on agit selon l'état
@@ -4462,12 +4669,102 @@ function Step-MacroWindow($w) {
                     Set-MState $w 'Lobby' 'Toujours au lobby : je relance'
                     break
                 }
+                # placement des persos (une fois par partie, dès qu'on est sur la map)
+                if ($m.PlaceOn -and -not $w.PlaceDone -and $el -gt 8 -and $now -ge $w.PlaceRetryAt -and
+                    -not [RML.Vision]::Find($shot, 'lobby').Found) {
+                    $w.PlaceSub = 'Open'; $w.FTries = 0; $w.PlaceIdx = 0; $w.PlaceMoves = 0; $w.PlaceCount = 0
+                    $w.MatchSince = $w.Since
+                    $m.Exclusive = $w   # la macro reste sur cette fenêtre pendant le placement
+                    Set-MState $w 'Place' 'Placement des persos...'
+                    break
+                }
                 # anti-AFK de la macro (en plus de celui du launcher)
                 if (($now - $w.LastInput).TotalMinutes -ge 12) {
                     [RML.MacroInput]::RightClick($w.Hwnd, [int]($shot.W / 2), [int]($shot.H / 2))
                     $w.LastInput = [DateTime]::UtcNow
                 }
-                $w.Info = "En partie depuis $([int]($el / 60)) min $([int]($el % 60)) s"
+                $tot = $el; if ($w.MatchSince) { $tot = ($now - $w.MatchSince).TotalSeconds }
+                $pl = if ($w.PlaceDone) { " - $($w.PlaceCount) perso(s) posé(s)" } else { '' }
+                $w.Info = "En partie depuis $([int]($tot / 60)) min $([int]($tot % 60)) s$pl"
+            }
+            'Place' {
+                # fin de partie pendant le placement : on arrête de poser
+                $nx = Find-MNext $shot
+                if ($nx.Found) { $w.LastCheck = [DateTime]::MinValue; Set-MState $w 'Match' 'Fin de partie'; if ($w.MatchSince) { $w.Since = $w.MatchSince }; break }
+                $ov = [RML.Vision]::Find($shot, 'overview').Found
+                $key = Get-DigitKey $m.PlaceKey
+                $back = { param($msg) Set-MState $w 'Match' $msg; if ($w.MatchSince) { $w.Since = $w.MatchSince }; $w.LastCheck = [DateTime]::MinValue }
+                switch ($w.PlaceSub) {
+                    'Open' {
+                        # F ouvre l'Unit Overview (et le referme si on rappuie)
+                        if ($ov) {
+                            $w.PlaceCount = [RML.Vision]::Count($shot, 'first')
+                            if ($w.PlaceCount -ge $m.PlaceTarget) { $w.PlaceSub = 'Done' } else { $w.PlaceSub = 'Camera' }
+                            $w.Info = "Unit Overview : $($w.PlaceCount) perso(s) posé(s)"
+                            break
+                        }
+                        if ($w.FTries -ge 3) { $w.PlaceRetryAt = $now.AddSeconds(45); & $back 'Unit Overview introuvable : nouvel essai dans 45 s'; break }
+                        [void][RML.MacroInput]::KeyChar($w.Hwnd, [char]'f')
+                        $w.FTries++; $w.LastInput = [DateTime]::UtcNow
+                        Start-Sleep -Milliseconds 600
+                        $w.Info = 'Ouverture de l''Unit Overview (F)...'
+                    }
+                    'Camera' {
+                        # dézoom à la molette puis caméra vers le sol
+                        $cx = [int]($shot.W * 0.40); $cy = [int]($shot.H * 0.50)
+                        [RML.MacroInput]::Wheel($w.Hwnd, $cx, $cy, -15)
+                        [RML.MacroInput]::DragRight($w.Hwnd, $cx, $cy, [int]($shot.H * 0.6))
+                        $w.LastInput = [DateTime]::UtcNow
+                        $w.PlaceIdx = 0; $w.PlaceSub = 'Scan'
+                        $w.Info = 'Caméra vers le sol, dézoom'
+                    }
+                    'Scan' {
+                        if (-not $ov) { $w.FTries = 0; $w.PlaceSub = 'Open'; break }   # l'overview s'est fermé : on le rouvre
+                        $pts = $script:placePoints
+                        if ($w.PlaceIdx -ge $pts.Count) {
+                            # tout l'écran essayé
+                            if ($w.PlaceCount -ge 1) { $w.PlaceSub = 'Done'; break }
+                            if ($w.PlaceMoves -lt 4) { $w.PlaceSub = 'Move'; break }
+                            [void][RML.MacroInput]::KeyChar($w.Hwnd, [char]'f')   # referme l'overview
+                            $w.PlaceRetryAt = $now.AddSeconds(60); $w.PlaceMoves = 0
+                            & $back 'Aucun perso posé (pas assez d''argent ?) : nouvel essai dans 1 min'
+                            break
+                        }
+                        $pt = $pts[$w.PlaceIdx]; $w.PlaceIdx++
+                        $x = [int]($shot.W * $pt[0]); $y = [int]($shot.H * $pt[1])
+                        [RML.MacroInput]::Key($w.Hwnd, [byte]$key[0], [byte]$key[1])   # sélectionne le perso (touche 2)
+                        Start-Sleep -Milliseconds 200
+                        [RML.MacroInput]::Click($w.Hwnd, $x, $y)                        # essaie de le poser ici
+                        $w.LastInput = [DateTime]::UtcNow
+                        Start-Sleep -Milliseconds 550
+                        $s2 = [RML.Vision]::Capture($w.Hwnd)
+                        $cnt = $w.PlaceCount
+                        if ($s2) { try { if ([RML.Vision]::Find($s2, 'overview').Found) { $cnt = [RML.Vision]::Count($s2, 'first') } } finally { $s2.Dispose() } }
+                        if ($cnt -gt $w.PlaceCount) {
+                            $w.PlaceCount = $cnt
+                            if ($cnt -ge $m.PlaceTarget) { $w.PlaceSub = 'Done' }
+                        } else {
+                            [RML.MacroInput]::RightClick($w.Hwnd, $x, $y)   # pas posé : annule la sélection
+                        }
+                        $w.Info = "Placement : essai $($w.PlaceIdx)/$($pts.Count), $($w.PlaceCount)/$($m.PlaceTarget) posé(s)"
+                    }
+                    'Move' {
+                        # rien de posé sur tout l'écran : on déplace le perso (Z, S, Q, D sur ton AZERTY) puis on réessaie
+                        $dir = @('z', 's', 'q', 'd')[$w.PlaceMoves % 4]
+                        $k = [RML.MacroInput]::CharToKey([char]$dir)
+                        if ($k -ge 0) {
+                            [RML.MacroInput]::Down($w.Hwnd, $k); Start-Sleep -Milliseconds 900; [RML.MacroInput]::Up($k)
+                        }
+                        $w.LastInput = [DateTime]::UtcNow
+                        $w.PlaceMoves++; $w.PlaceIdx = 0; $w.PlaceSub = 'Scan'
+                        $w.Info = "Aucune place trouvée : je bouge ($($dir.ToUpper())) et je réessaie"
+                    }
+                    'Done' {
+                        if ($ov) { [void][RML.MacroInput]::KeyChar($w.Hwnd, [char]'f') }   # referme l'overview
+                        $w.PlaceDone = $true
+                        & $back "$($w.PlaceCount) perso(s) posé(s)"
+                    }
+                }
             }
             'Rewards' {
                 # clics pour réclamer les récompenses, puis Return to lobby
@@ -4495,7 +4792,10 @@ function Step-MacroWindow($w) {
                 }
                 if ([RML.Vision]::Find($shot, 'lobby').Found) {
                     if (-not $w.LobbyAt) { $w.LobbyAt = $now }
-                    if (($now - $w.LobbyAt).TotalSeconds -ge 3) { $w.Cycles++; Set-MState $w 'Lobby' "Lobby chargé ($($w.Cycles) partie(s) finie(s))" }
+                    if (($now - $w.LobbyAt).TotalSeconds -ge 3) {
+                        $w.Cycles++; $w.PlaceDone = $false; $w.PlaceRetryAt = [DateTime]::MinValue; $w.MatchSince = $null
+                        Set-MState $w 'Lobby' "Lobby chargé ($($w.Cycles) partie(s) finie(s))"
+                    }
                     break
                 }
                 $w.LobbyAt = $null
@@ -4574,6 +4874,7 @@ function Start-Macro($wins) {
             Since = [DateTime]::UtcNow; LastAct = [DateTime]::MinValue; LastInput = [DateTime]::UtcNow
             LastCheck = [DateTime]::MinValue; LastZ = [DateTime]::MinValue; AlertAt = [DateTime]::MinValue
             Clicks = 0; Cycles = 0; Miss = 0; LobbyAt = $null; Holding = $false; HoldKey = 0; EnterAt = $null; SubmitAt = $null; SubmitTries = 0
+            PlaceDone = $false; PlaceRetryAt = [DateTime]::MinValue; PlaceSub = 'Open'; PlaceIdx = 0; PlaceMoves = 0; PlaceCount = 0; FTries = 0; MatchSince = $null
         })
     }
     $m.Idx = -1; $m.Captcha = $null; $m.Exclusive = $null; $m.Running = $true
@@ -4601,7 +4902,7 @@ function Show-MacroWindow {
     }
     $f = New-Object System.Windows.Forms.Form
     $f.Text = 'Macro Anime Adventures'
-    $f.ClientSize = New-Object System.Drawing.Size(450, 470)
+    $f.ClientSize = New-Object System.Drawing.Size(450, 500)
     $f.FormBorderStyle = 'FixedSingle'; $f.MaximizeBox = $false
     $f.StartPosition = 'CenterScreen'
     $f.Font = $form.Font
@@ -4646,10 +4947,24 @@ function Show-MacroWindow {
     $cbF5.Text = 'F5 au captcha'; $cbF5.Checked = $script:macro.F5
     $cbF5.SetBounds(312, 181, 130, 22); $f.Controls.Add($cbF5)
 
+    $cbP = New-Object System.Windows.Forms.CheckBox
+    $cbP.Text = 'Placer des persos :'; $cbP.Checked = $script:macro.PlaceOn
+    $cbP.SetBounds(12, 218, 135, 22); $f.Controls.Add($cbP)
+    $lPK = New-Object System.Windows.Forms.Label
+    $lPK.Text = 'touche'; $lPK.SetBounds(150, 221, 45, 20); $f.Controls.Add($lPK)
+    $txtP = New-Object System.Windows.Forms.TextBox
+    $txtP.MaxLength = 1; $txtP.Text = $script:macro.PlaceKey; $txtP.TextAlign = 'Center'
+    $txtP.SetBounds(196, 218, 26, 24); $f.Controls.Add($txtP)
+    $lPN = New-Object System.Windows.Forms.Label
+    $lPN.Text = 'nombre'; $lPN.SetBounds(232, 221, 50, 20); $f.Controls.Add($lPN)
+    $numP = New-Object System.Windows.Forms.NumericUpDown
+    $numP.Minimum = 1; $numP.Maximum = 6; $numP.Value = $script:macro.PlaceTarget
+    $numP.SetBounds(284, 218, 42, 24); $f.Controls.Add($numP)
+
     $lv = New-Object System.Windows.Forms.ListView
     $lv.View = 'Details'; $lv.FullRowSelect = $true; $lv.HeaderStyle = 'Nonclickable'
     [void]$lv.Columns.Add('Fenêtre', 80); [void]$lv.Columns.Add('État', 270); [void]$lv.Columns.Add('Parties', 60)
-    $lv.SetBounds(12, 220, 426, 150); $f.Controls.Add($lv)
+    $lv.SetBounds(12, 250, 426, 150); $f.Controls.Add($lv)
 
     $note = New-Object System.Windows.Forms.Label
     $note.ForeColor = [System.Drawing.Color]::Gray
@@ -4657,10 +4972,10 @@ function Show-MacroWindow {
                  "• La macro prend la souris et le clavier : évite d'utiliser le PC pendant qu'elle tourne.`r`n" +
                  "• Ne réduis pas les fenêtres et garde-les à peu près à la même taille.`r`n" +
                  "• F8 (n'importe où) arrête la macro. Fermer cette fenêtre ne l'arrête pas."
-    $note.SetBounds(12, 378, 430, 88); $f.Controls.Add($note)
+    $note.SetBounds(12, 408, 430, 88); $f.Controls.Add($note)
 
     # les boutons s'exécutent après la fin de cette fonction : on garde les contrôles en script:
-    $script:mui = @{ f = $f; clb = $clb; num = $num; cbS = $cbS; cbF5 = $cbF5; txtK = $txtK; lv = $lv; bStart = $bStart; bStop = $bStop }
+    $script:mui = @{ f = $f; clb = $clb; num = $num; cbS = $cbS; cbF5 = $cbF5; cbP = $cbP; txtP = $txtP; numP = $numP; txtK = $txtK; lv = $lv; bStart = $bStart; bStop = $bStop }
     $script:mui.refresh = {
         $script:mui.clb.Items.Clear()
         $script:macroWinList = @(Get-RobloxWindows)
@@ -4702,6 +5017,9 @@ function Show-MacroWindow {
             $script:macro.Key = if ($k) { $k.Substring(0, 1).ToUpper() } else { 'Z' }
             $script:macro.Sound = $script:mui.cbS.Checked
             $script:macro.F5 = $script:mui.cbF5.Checked
+            $script:macro.PlaceOn = $script:mui.cbP.Checked
+            $pk = "$($script:mui.txtP.Text)".Trim(); $script:macro.PlaceKey = if ($pk -match '^[0-9]$') { $pk } else { '2' }
+            $script:macro.PlaceTarget = [int]$script:mui.numP.Value
             Start-Macro $sel
         } catch { Show-Error $_ }
     })
@@ -4710,6 +5028,9 @@ function Show-MacroWindow {
     $script:mui.num.Add_ValueChanged({ $script:macro.RewardClicks = [int]$script:mui.num.Value })
     $script:mui.cbS.Add_CheckedChanged({ $script:macro.Sound = $script:mui.cbS.Checked })
     $script:mui.cbF5.Add_CheckedChanged({ $script:macro.F5 = $script:mui.cbF5.Checked })
+    $script:mui.cbP.Add_CheckedChanged({ $script:macro.PlaceOn = $script:mui.cbP.Checked })
+    $script:mui.txtP.Add_TextChanged({ $pk = "$($script:mui.txtP.Text)".Trim(); if ($pk -match '^[0-9]$') { $script:macro.PlaceKey = $pk } })
+    $script:mui.numP.Add_ValueChanged({ $script:macro.PlaceTarget = [int]$script:mui.numP.Value })
 
     # tableau d'état mis à jour en direct
     $ui = New-Object System.Windows.Forms.Timer
