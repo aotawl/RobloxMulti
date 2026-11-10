@@ -1,6 +1,6 @@
 # Roblox Multi Launcher : fiche des fonctionnalités
 
-**Version actuelle : v2.0.5**. Cette fiche est mise à jour à chaque nouvelle version.
+**Version actuelle : v2.0.6**. Cette fiche est mise à jour à chaque nouvelle version.
 
 ## Sommaire
 1. [Multi-instance](#1-multi-instance)
@@ -244,7 +244,8 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 ## 13. Historique des versions
 | Version | Nouveautés |
 |---|---|
-| **2.0.5** | Macro : au captcha, la fenêtre clignote dans la barre des tâches et F5 est appuyé (option) |
+| **2.0.6** | Macro : Entrée au captcha détecté de façon fiable (surveillance toutes les 5 ms), Submit recliqué une fois si besoin, reprise immédiate des autres comptes |
+| 2.0.5 | Macro : au captcha, la fenêtre clignote dans la barre des tâches et F5 est appuyé (option) |
 | 2.0.4 | Macro : écrans reconnus aussi en plein écran large (boutons agrandis jusqu'à 2,2×) |
 | 2.0.3 | Macro : au captcha, tape les chiffres puis Entrée, la macro clique sur Submit |
 | 2.0.2 | Macro : Z gardé enfoncé (le perso avance en continu) jusqu'au matchmaking |

@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '2.0.5'
+$AppVersion = '2.0.6'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -3459,6 +3459,46 @@ namespace RML {
         }
     }
 
+    // Surveille la touche Entrée toutes les 5 ms dans un fil séparé : un appui rapide n'est jamais raté,
+    // même quand la macro est occupée à analyser une image. Ne compte que si la fenêtre au premier
+    // plan appartient au Roblox du captcha.
+    public static class EnterWatch {
+        [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
+        [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+        static Thread worker;
+        static volatile bool running;
+        static uint targetPid;
+        static int pressed;   // 1 = Entrée appuyé depuis la dernière lecture
+
+        public static void Start(IntPtr hwnd) {
+            uint p; GetWindowThreadProcessId(hwnd, out p);
+            targetPid = p;
+            Interlocked.Exchange(ref pressed, 0);
+            running = true;
+            if (worker == null || !worker.IsAlive) {
+                worker = new Thread(Loop);
+                worker.IsBackground = true;
+                worker.Start();
+            }
+        }
+        public static void Stop() { running = false; Interlocked.Exchange(ref pressed, 0); }
+        public static bool Consume() { return Interlocked.Exchange(ref pressed, 0) == 1; }
+
+        static void Loop() {
+            bool was = (GetAsyncKeyState(0x0D) & 0x8000) != 0;   // ignore un Entrée déjà enfoncé
+            while (running) {
+                bool down = (GetAsyncKeyState(0x0D) & 0x8000) != 0;
+                if (down && !was) {
+                    uint p; GetWindowThreadProcessId(GetForegroundWindow(), out p);
+                    if (p == targetPid) Interlocked.Exchange(ref pressed, 1);
+                }
+                was = down;
+                Thread.Sleep(5);
+            }
+        }
+    }
+
     // Clics et touches envoyés à une fenêtre Roblox (elle doit passer au premier plan)
     public static class MacroInput {
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
@@ -4317,18 +4357,24 @@ function Step-MacroWindow($w) {
                         $by = [int]($c.Y + 291 * ($shot.H / 1363.0) * $c.K)
                         [RML.MacroInput]::Click($w.Hwnd, $c.X, $by)
                         $w.LastInput = [DateTime]::UtcNow
-                        $w.EnterAt = $null
-                        $script:enterWasDown = $true   # ignore un Entrée déjà enfoncé
-                        $captchaKeyTimer.Start()        # surveille la touche Entrée
+                        $w.EnterAt = $null; $w.SubmitAt = $null; $w.SubmitTries = 0
+                        [RML.EnterWatch]::Start($w.Hwnd)   # surveille la touche Entrée
+                        $captchaKeyTimer.Start()
+                    } elseif ($w.SubmitAt -and ($now - $w.SubmitAt).TotalSeconds -ge 2 -and $w.SubmitTries -lt 1) {
+                        # Submit cliqué mais le captcha est encore là : on reclique une fois
+                        $w.SubmitTries++
+                        [void](Invoke-CaptchaSubmit $w)
+                        break
                     } elseif (($now - $w.AlertAt).TotalSeconds -ge 60) {
                         [RML.MacroInput]::Focus($w.Hwnd)
                         Send-CaptchaAlert $w
                     }
-                    $w.Info = 'CAPTCHA : tape le code puis appuie sur Entrée'
+                    if (-not $w.SubmitAt) { $w.Info = 'CAPTCHA : tape le code puis appuie sur Entrée' }
                 } else {
                     $w.Miss++
-                    if ($w.Miss -ge 3) {
-                        if ($m.Captcha -eq $w) { $m.Captcha = $null }
+                    if ($w.Miss -ge 2) {
+                        if ($m.Captcha -eq $w) { $m.Captcha = $null; [RML.EnterWatch]::Stop() }
+                        $w.SubmitAt = $null
                         $w.LastInput = $now
                         Set-MState $w 'Match' 'Captcha validé : matchmaking...'
                     }
@@ -4412,33 +4458,32 @@ function Invoke-MacroTick {
 }
 
 # Pendant un captcha : dès que tu appuies sur Entrée dans la fenêtre, on clique sur Submit
-$script:enterWasDown = $false
+function Invoke-CaptchaSubmit($w) {
+    $shot = [RML.Vision]::Capture($w.Hwnd)
+    if (-not $shot) { return $false }
+    try {
+        $c = [RML.Vision]::Find($shot, 'captcha')
+        if (-not $c.Found) { return $false }   # déjà validé (par exemple par le jeu lui-même)
+        # Submit est sous le titre « Captcha », à gauche (mesuré sur la capture du jeu)
+        $k = ($shot.H / 1363.0) * $c.K
+        $script:macroBusy = $true
+        try { [RML.MacroInput]::Click($w.Hwnd, [int]($c.X - 216.5 * $k), [int]($c.Y + 397.5 * $k)) } finally { $script:macroBusy = $false }
+        $w.LastInput = [DateTime]::UtcNow
+        $w.SubmitAt = $w.LastInput
+        $w.Info = 'Submit cliqué'
+        return $true
+    } finally { $shot.Dispose() }
+}
+
 function Watch-CaptchaEnter {
     $m = $script:macro
     $w = $m.Captcha
-    if (-not $m.Running -or -not $w) { $captchaKeyTimer.Stop(); return }
-    $down = [RML.MacroInput]::IsDown(0x0D)   # Entrée
-    if ($down -and -not $script:enterWasDown) {
-        $script:enterWasDown = $true
-        if ([RML.MacroInput]::IsForeground($w.Hwnd)) { $w.EnterAt = [DateTime]::UtcNow }
-    } elseif (-not $down) { $script:enterWasDown = $false }
-
-    # 250 ms après Entrée : si le captcha est toujours là, clic sur Submit
+    if (-not $m.Running -or -not $w) { [RML.EnterWatch]::Stop(); $captchaKeyTimer.Stop(); return }
+    if ([RML.EnterWatch]::Consume()) { $w.EnterAt = [DateTime]::UtcNow; $w.SubmitTries = 0; $w.Info = 'Entrée reçu...' }
+    # 250 ms après Entrée (le temps que le jeu prenne le texte) : clic sur Submit
     if ($w.EnterAt -and ([DateTime]::UtcNow - $w.EnterAt).TotalMilliseconds -ge 250) {
         $w.EnterAt = $null
-        $shot = [RML.Vision]::Capture($w.Hwnd)
-        if (-not $shot) { return }
-        try {
-            $c = [RML.Vision]::Find($shot, 'captcha')
-            if ($c.Found) {
-                # Submit est sous le titre « Captcha », à gauche (mesuré sur la capture du jeu)
-                $k = ($shot.H / 1363.0) * $c.K
-                $script:macroBusy = $true
-                try { [RML.MacroInput]::Click($w.Hwnd, [int]($c.X - 216.5 * $k), [int]($c.Y + 397.5 * $k)) } finally { $script:macroBusy = $false }
-                $w.LastInput = [DateTime]::UtcNow
-                $w.Info = 'Submit cliqué'
-            }
-        } finally { $shot.Dispose() }
+        [void](Invoke-CaptchaSubmit $w)
     }
 }
 $captchaKeyTimer = New-Object System.Windows.Forms.Timer
@@ -4457,7 +4502,7 @@ function Start-Macro($wins) {
             Name = $x.Name; Hwnd = $x.Hwnd; Pid = $x.Pid; State = 'Detect'; Info = 'Démarrage...'
             Since = [DateTime]::UtcNow; LastAct = [DateTime]::MinValue; LastInput = [DateTime]::UtcNow
             LastCheck = [DateTime]::MinValue; LastZ = [DateTime]::MinValue; AlertAt = [DateTime]::MinValue
-            Clicks = 0; Cycles = 0; Miss = 0; LobbyAt = $null; Holding = $false; HoldKey = 0; EnterAt = $null
+            Clicks = 0; Cycles = 0; Miss = 0; LobbyAt = $null; Holding = $false; HoldKey = 0; EnterAt = $null; SubmitAt = $null; SubmitTries = 0
         })
     }
     $m.Idx = -1; $m.Captcha = $null; $m.Exclusive = $null; $m.Running = $true
@@ -4470,6 +4515,7 @@ function Stop-Macro($why) {
     $m.Running = $false; $m.Captcha = $null
     $macroTimer.Stop()
     $captchaKeyTimer.Stop()
+    try { [RML.EnterWatch]::Stop() } catch {}
     foreach ($w in $m.Windows) { Stop-MHold $w }
     $m.Exclusive = $null
     foreach ($w in $m.Windows) { $w.Info = $why }
