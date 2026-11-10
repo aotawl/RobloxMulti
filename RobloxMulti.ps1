@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '2.0.4'
+$AppVersion = '2.0.5'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -3553,6 +3553,17 @@ namespace RML {
 
         public static bool IsDown(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
         public static bool IsForeground(IntPtr h) { return GetForegroundWindow() == h; }
+
+        [StructLayout(LayoutKind.Sequential)] struct FlashInfo { public uint cbSize; public IntPtr hwnd; public uint dwFlags; public uint uCount; public uint dwTimeout; }
+        [DllImport("user32.dll")] static extern bool FlashWindowEx(ref FlashInfo f);
+        // Fait clignoter la fenêtre dans la barre des tâches jusqu'à ce que tu cliques dessus
+        public static void Flash(IntPtr h) {
+            FlashInfo f = new FlashInfo();
+            f.cbSize = (uint)Marshal.SizeOf(typeof(FlashInfo)); f.hwnd = h;
+            f.dwFlags = 0x3 | 0xC;   // FLASHW_ALL | FLASHW_TIMERNOFG
+            f.uCount = 0; f.dwTimeout = 0;
+            FlashWindowEx(ref f);
+        }
     }
 }
 '@
@@ -4155,7 +4166,7 @@ S4qCQtv/AAAAAElFTkSuQmCC
 '@ }
 )
 
-$script:macro = @{ Running = $false; Windows = (New-Object System.Collections.ArrayList); Idx = -1; Captcha = $null; RewardClicks = 5; Sound = $true; Key = 'Z'; Exclusive = $null }
+$script:macro = @{ Running = $false; Windows = (New-Object System.Collections.ArrayList); Idx = -1; Captcha = $null; RewardClicks = 5; Sound = $true; Key = 'Z'; Exclusive = $null; F5 = $true }
 $script:macroBusy = $false
 $script:macroForm = $null
 
@@ -4213,6 +4224,7 @@ function Find-MNext($shot) {
 function Send-CaptchaAlert($w) {
     $w.AlertAt = [DateTime]::UtcNow
     if ($script:macro.Sound) { try { [System.Media.SystemSounds]::Exclamation.Play() } catch {} }
+    try { [RML.MacroInput]::Flash($w.Hwnd) } catch {}   # clignote dans la barre des tâches
     try {
         $tray.ShowBalloonTip(6000, 'Captcha à remplir',
             "$($w.Name) : tape le code dans la case, puis appuie sur Entrée.", [System.Windows.Forms.ToolTipIcon]::Warning)
@@ -4295,15 +4307,19 @@ function Step-MacroWindow($w) {
                 if ($c.Found) {
                     $w.Miss = 0
                     if ($m.Captcha -ne $w) {
-                        # la fenêtre passe devant, le curseur dans la case : à toi de taper le code
+                        # notification, F5, puis le curseur dans la case : à toi de taper le code
                         $m.Captcha = $w
+                        Send-CaptchaAlert $w
+                        if ($m.F5) {
+                            [RML.MacroInput]::Key($w.Hwnd, 0x74, 0x3F)   # F5 (avant de cliquer, pour ne pas l'écrire dans la case)
+                            Start-Sleep -Milliseconds 300
+                        }
                         $by = [int]($c.Y + 291 * ($shot.H / 1363.0) * $c.K)
                         [RML.MacroInput]::Click($w.Hwnd, $c.X, $by)
                         $w.LastInput = [DateTime]::UtcNow
                         $w.EnterAt = $null
                         $script:enterWasDown = $true   # ignore un Entrée déjà enfoncé
                         $captchaKeyTimer.Start()        # surveille la touche Entrée
-                        Send-CaptchaAlert $w
                     } elseif (($now - $w.AlertAt).TotalSeconds -ge 60) {
                         [RML.MacroInput]::Focus($w.Hwnd)
                         Send-CaptchaAlert $w
@@ -4509,6 +4525,9 @@ function Show-MacroWindow {
     $bStart.SetBounds(12, 175, 140, 34); $f.Controls.Add($bStart)
     $bStop = New-Object System.Windows.Forms.Button
     $bStop.Text = 'Arrêter (F8)'; $bStop.SetBounds(160, 175, 140, 34); $f.Controls.Add($bStop)
+    $cbF5 = New-Object System.Windows.Forms.CheckBox
+    $cbF5.Text = 'F5 au captcha'; $cbF5.Checked = $script:macro.F5
+    $cbF5.SetBounds(312, 181, 130, 22); $f.Controls.Add($cbF5)
 
     $lv = New-Object System.Windows.Forms.ListView
     $lv.View = 'Details'; $lv.FullRowSelect = $true; $lv.HeaderStyle = 'Nonclickable'
@@ -4524,7 +4543,7 @@ function Show-MacroWindow {
     $note.SetBounds(12, 378, 430, 88); $f.Controls.Add($note)
 
     # les boutons s'exécutent après la fin de cette fonction : on garde les contrôles en script:
-    $script:mui = @{ f = $f; clb = $clb; num = $num; cbS = $cbS; txtK = $txtK; lv = $lv; bStart = $bStart; bStop = $bStop }
+    $script:mui = @{ f = $f; clb = $clb; num = $num; cbS = $cbS; cbF5 = $cbF5; txtK = $txtK; lv = $lv; bStart = $bStart; bStop = $bStop }
     $script:mui.refresh = {
         $script:mui.clb.Items.Clear()
         $script:macroWinList = @(Get-RobloxWindows)
@@ -4565,6 +4584,7 @@ function Show-MacroWindow {
             $k = "$($script:mui.txtK.Text)".Trim()
             $script:macro.Key = if ($k) { $k.Substring(0, 1).ToUpper() } else { 'Z' }
             $script:macro.Sound = $script:mui.cbS.Checked
+            $script:macro.F5 = $script:mui.cbF5.Checked
             Start-Macro $sel
         } catch { Show-Error $_ }
     })
@@ -4572,6 +4592,7 @@ function Show-MacroWindow {
     $script:mui.txtK.Add_TextChanged({ $k = "$($script:mui.txtK.Text)".Trim(); if ($k) { $script:macro.Key = $k.Substring(0, 1).ToUpper() } })
     $script:mui.num.Add_ValueChanged({ $script:macro.RewardClicks = [int]$script:mui.num.Value })
     $script:mui.cbS.Add_CheckedChanged({ $script:macro.Sound = $script:mui.cbS.Checked })
+    $script:mui.cbF5.Add_CheckedChanged({ $script:macro.F5 = $script:mui.cbF5.Checked })
 
     # tableau d'état mis à jour en direct
     $ui = New-Object System.Windows.Forms.Timer
