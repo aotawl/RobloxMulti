@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '2.0.1'
+$AppVersion = '2.0.2'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -3122,7 +3122,7 @@ function Update-Optimizations {
 # Anti-AFK : vérifié toutes les 5 s
 function Update-AntiAfk {
     if (-not $script:opts.AfkOn -or -not ('RML.Afk' -as [type])) { return }
-    if ($script:macroBusy -or ($script:macro -and $script:macro.Captcha)) { return }   # la macro a la main
+    if ($script:macroBusy -or ($script:macro -and ($script:macro.Captcha -or $script:macro.Exclusive))) { return }   # la macro a la main
     $now = [DateTime]::UtcNow
     $limit = [double]$script:opts.AfkMinutes
     foreach ($p in @(Get-Process -Name $RobloxProc -ErrorAction SilentlyContinue)) {
@@ -3513,6 +3513,25 @@ namespace RML {
                 mouse_event(0x0008, 0, 0, 0, IntPtr.Zero); Thread.Sleep(60);
                 mouse_event(0x0010, 0, 0, 0, IntPtr.Zero); Thread.Sleep(60);
             } finally { Vision.DpiOff(old); }
+        }
+
+        // Code de la touche marquée de ce caractère sur le clavier du PC : vk | (scan << 8), ou -1
+        public static int CharToKey(char c) {
+            short r = VkKeyScan(char.ToLowerInvariant(c));
+            if (r == -1) return -1;
+            byte vk = (byte)(r & 0xFF);
+            byte scan = (byte)MapVirtualKey(vk, 0);
+            return vk | (scan << 8);
+        }
+
+        // Enfonce une touche (sans la relâcher) dans la fenêtre : le perso avance tant qu'elle est enfoncée
+        public static void Down(IntPtr h, int key) {
+            Focus(h);
+            keybd_event((byte)(key & 0xFF), (byte)((key >> 8) & 0xFF), 0, IntPtr.Zero);
+        }
+
+        public static void Up(int key) {
+            keybd_event((byte)(key & 0xFF), (byte)((key >> 8) & 0xFF), 2, IntPtr.Zero);
         }
 
         // Appuie sur la touche marquée de ce caractère sur le clavier du PC (gère AZERTY / QWERTY...)
@@ -4134,7 +4153,7 @@ S4qCQtv/AAAAAElFTkSuQmCC
 '@ }
 )
 
-$script:macro = @{ Running = $false; Windows = (New-Object System.Collections.ArrayList); Idx = -1; Captcha = $null; RewardClicks = 5; Sound = $true; Key = 'Z' }
+$script:macro = @{ Running = $false; Windows = (New-Object System.Collections.ArrayList); Idx = -1; Captcha = $null; RewardClicks = 5; Sound = $true; Key = 'Z'; Exclusive = $null }
 $script:macroBusy = $false
 $script:macroForm = $null
 
@@ -4164,7 +4183,14 @@ function Get-RobloxWindows {
         })
 }
 
+# Relâche la touche gardée enfoncée et libère la fenêtre
+function Stop-MHold($w) {
+    if ($w.Holding) { try { [RML.MacroInput]::Up($w.HoldKey) } catch {}; $w.Holding = $false }
+    if ($script:macro.Exclusive -eq $w) { $script:macro.Exclusive = $null }
+}
+
 function Set-MState($w, $state, $info) {
+    if ($w.State -eq 'Matchmaking' -and $state -ne 'Matchmaking') { Stop-MHold $w }
     $w.State = $state
     $w.Since = [DateTime]::UtcNow
     if ($info) { $w.Info = $info }
@@ -4232,15 +4258,24 @@ function Step-MacroWindow($w) {
                 if ($el -gt 120) { Set-MState $w 'Detect' }
             }
             'Matchmaking' {
-                if ([RML.Vision]::Find($shot, 'captcha').Found) { Set-MState $w 'Captcha' 'Captcha détecté'; break }
+                if ([RML.Vision]::Find($shot, 'captcha').Found) { Stop-MHold $w; Set-MState $w 'Captcha' 'Captcha détecté'; break }
                 $fd = [RML.Vision]::Find($shot, 'find')
-                if ($fd.Found) { Invoke-MClick $w $fd; Set-MState $w 'WaitCaptcha' 'Find Match cliqué'; break }
-                if (($now - $w.LastZ).TotalSeconds -ge 1.2) {
-                    # la touche marquée « Z » (ou autre) sur TON clavier, AZERTY compris
-                    if (-not [RML.MacroInput]::KeyChar($w.Hwnd, [char]"$($m.Key)"[0])) { [RML.MacroInput]::Key($w.Hwnd, 0x5A, 0x11) }
-                    $w.LastZ = $now; $w.LastInput = $now
+                if ($fd.Found) { Stop-MHold $w; Invoke-MClick $w $fd; Set-MState $w 'WaitCaptcha' 'Find Match cliqué'; break }   # on lâche Z AVANT de cliquer
+                # Z gardé ENFONCÉ (le perso avance) jusqu'à « Join Matchmaking ».
+                # Pendant ce temps la macro reste sur cette fenêtre (sinon le perso s'arrête).
+                if (-not $w.Holding) {
+                    $key = [RML.MacroInput]::CharToKey([char]"$($m.Key)"[0])   # touche marquée Z sur TON clavier
+                    if ($key -lt 0) { $key = 0x5A -bor (0x11 -shl 8) }
+                    $w.HoldKey = $key
+                    $m.Exclusive = $w
+                    [RML.MacroInput]::Down($w.Hwnd, $key)
+                    $w.Holding = $true; $w.LastZ = $now
+                } elseif (($now - $w.LastZ).TotalSeconds -ge 0.5) {
+                    [RML.MacroInput]::Down($w.Hwnd, $w.HoldKey)   # comme la répétition du clavier
+                    $w.LastZ = $now
                 }
-                $w.Info = "Appui sur $($m.Key) ($([int]$el) s)..."
+                $w.LastInput = $now
+                $w.Info = "$($m.Key) enfoncé, j'avance ($([int]$el) s)..."
                 if ($el -gt 90) { Set-MState $w 'Lobby' 'Pas de matchmaking : je réessaie Play' }
             }
             'WaitCaptcha' {
@@ -4343,11 +4378,13 @@ function Invoke-MacroTick {
     if ([RML.MacroInput]::IsDown(0x77)) { Stop-Macro 'Arrêtée avec F8'; return }   # F8
     # fenêtres fermées : on les retire
     foreach ($w in @($m.Windows)) {
-        if (-not [RML.Vision]::IsWindow($w.Hwnd)) { if ($m.Captcha -eq $w) { $m.Captcha = $null }; $m.Windows.Remove($w) }
+        if (-not [RML.Vision]::IsWindow($w.Hwnd)) { Stop-MHold $w; if ($m.Captcha -eq $w) { $m.Captcha = $null }; $m.Windows.Remove($w) }
     }
     if ($m.Windows.Count -eq 0) { Stop-Macro 'Plus aucune fenêtre Roblox'; return }
-    # pendant un captcha, on ne touche qu'à cette fenêtre (pour ne pas te voler le clavier)
+    # pendant un captcha, on ne touche qu'à cette fenêtre (pour ne pas te voler le clavier),
+    # et pendant que le perso avance avec Z aussi (pour qu'il ne s'arrête pas)
     if ($m.Captcha) { $w = $m.Captcha }
+    elseif ($m.Exclusive) { $w = $m.Exclusive }
     else { $m.Idx = ($m.Idx + 1) % $m.Windows.Count; $w = $m.Windows[$m.Idx] }
     $script:macroBusy = $true
     try { Step-MacroWindow $w } catch { $w.Info = "Erreur : $($_.Exception.Message)" } finally { $script:macroBusy = $false }
@@ -4365,10 +4402,10 @@ function Start-Macro($wins) {
             Name = $x.Name; Hwnd = $x.Hwnd; Pid = $x.Pid; State = 'Detect'; Info = 'Démarrage...'
             Since = [DateTime]::UtcNow; LastAct = [DateTime]::MinValue; LastInput = [DateTime]::UtcNow
             LastCheck = [DateTime]::MinValue; LastZ = [DateTime]::MinValue; AlertAt = [DateTime]::MinValue
-            Clicks = 0; Cycles = 0; Miss = 0; LobbyAt = $null
+            Clicks = 0; Cycles = 0; Miss = 0; LobbyAt = $null; Holding = $false; HoldKey = 0
         })
     }
-    $m.Idx = -1; $m.Captcha = $null; $m.Running = $true
+    $m.Idx = -1; $m.Captcha = $null; $m.Exclusive = $null; $m.Running = $true
     $macroTimer.Start()
     try { $tray.Text = 'Roblox Multi Launcher (macro en cours)' } catch {}
 }
@@ -4377,6 +4414,8 @@ function Stop-Macro($why) {
     $m = $script:macro
     $m.Running = $false; $m.Captcha = $null
     $macroTimer.Stop()
+    foreach ($w in $m.Windows) { Stop-MHold $w }
+    $m.Exclusive = $null
     foreach ($w in $m.Windows) { $w.Info = $why }
     try { $tray.Text = 'Roblox Multi Launcher' } catch {}
 }
