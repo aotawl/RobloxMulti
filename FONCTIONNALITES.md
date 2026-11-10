@@ -1,6 +1,6 @@
 # Roblox Multi Launcher : fiche des fonctionnalités
 
-**Version actuelle : v1.9.0**. Cette fiche est mise à jour à chaque nouvelle version.
+**Version actuelle : v2.0.0**. Cette fiche est mise à jour à chaque nouvelle version.
 
 ## Sommaire
 1. [Multi-instance](#1-multi-instance)
@@ -9,6 +9,7 @@
 4. [Fermeture des Roblox](#4-fermeture-des-roblox)
 5. [Mode Économie](#5-mode-économie)
 6. [Paramètres : anti-AFK, limites CPU/RAM, optimisation](#6-paramètres--anti-afk-limites-cpuram-optimisation)
+6 bis. [Macro Anime Adventures](#6-bis-macro-anime-adventures)
 7. [Arrière-plan et icône ^](#7-arrière-plan-et-icône-)
 8. [Écran d'accueil (GIF / vidéo)](#8-écran-daccueil-gif--vidéo)
 9. [Mises à jour](#9-mises-à-jour)
@@ -41,7 +42,7 @@ Aucun mot de passe n'est enregistré. Seule la session est gardée, **chiffrée 
 | Lancer un compte | Sélectionne-le puis **Lancer**, ou double-clic dessus |
 | Lancer plusieurs comptes | **Ctrl + clic** pour en sélectionner plusieurs, puis **Lancer** (environ 3 s entre chaque) |
 | Supprimer un ou plusieurs comptes | Sélectionne-les puis **Supprimer**, ou clic droit → **Supprimer** |
-| Menu clic droit | Clic droit sur la liste des comptes : **Lancer**, **Lancer et disposer les fenêtres**, **Ranger les Roblox déjà ouverts**, **Supprimer** |
+| Menu clic droit | Clic droit sur la liste des comptes : **Lancer**, **Lancer et disposer les fenêtres**, **Ranger les Roblox déjà ouverts**, **Macro Anime Adventures**, **Supprimer** |
 | Lancer et disposer les fenêtres | Sélectionne un ou plusieurs comptes → clic droit → **Lancer et disposer les fenêtres** → choisis une disposition (voir ci-dessous) |
 | Ranger les Roblox déjà ouverts | Clic droit → **Ranger les Roblox déjà ouverts** → choisis une disposition |
 | Session expirée | Le launcher prévient : supprime le compte et ajoute-le à nouveau |
@@ -126,12 +127,45 @@ Les deux limites sont désactivées par défaut.
 | Mode efficacité Windows | Case cochée par défaut : moins de chauffe et moins de conso |
 | Libérer la RAM | Case cochée par défaut : toutes les 2 minutes |
 
+## 6 bis. Macro Anime Adventures
+Fait tourner en boucle des parties d'Anime Adventures (Infinity Mansion), sur une ou plusieurs fenêtres à la fois.
+
+S'ouvre avec le lien **Macro Anime Adventures** en bas du launcher, avec un clic droit sur l'icône ^, ou avec un clic droit sur la liste des comptes.
+
+**Le cycle** (recommence tout seul) :
+1. Attend que le **lobby** soit chargé
+2. Clique sur **Play**
+3. Appuie sur **Z** jusqu'à ce que « Join Matchmaking » apparaisse
+4. Clique sur **Find Match**
+5. **Captcha** : la fenêtre passe devant avec un son et une notification, le curseur est dans la case. **C'est toi qui tapes le code** puis cliques **Submit**
+6. Attend la fin de la partie (**sans limite de temps**), victoire ou défaite
+7. Clique sur **Next**, puis fait les clics pour les récompenses (5 par défaut)
+8. Clique sur **Return to lobby**, attend le chargement du lobby, et recommence
+
+| Action | Comment |
+|---|---|
+| Choisir les fenêtres | Coche les fenêtres Roblox dans la liste (**Rafraîchir** si tu viens d'en ouvrir) |
+| Retrouver une fenêtre | Sélectionne-la → **Montrer** |
+| Vérifier que la macro voit bien l'écran | Sélectionne une fenêtre → **Tester la détection** : affiche ce qui est reconnu, et enregistre une capture `macro_capture.png` sur le Bureau |
+| Nombre de clics de récompense | De 0 à 10 (5 par défaut) |
+| Son du captcha | Case **Son quand un captcha arrive** |
+| Démarrer | Bouton **Démarrer** |
+| Arrêter | Bouton **Arrêter**, ou touche **F8** n'importe où |
+| Suivre | Le tableau affiche l'état de chaque fenêtre et le nombre de parties finies. La ligne en orange attend un captcha |
+| Fermer la fenêtre de la macro | La macro continue. Rouvre-la avec le lien ou l'icône ^ |
+
+- **Plusieurs fenêtres** : chacune suit son propre cycle. Quand un captcha arrive, la macro ne touche plus aux autres fenêtres tant qu'il n'est pas rempli, pour ne pas te voler le clavier. S'il y a plusieurs captchas, ils arrivent un par un.
+- **Anti-AFK** : il continue de tourner pendant les parties. La macro ajoute aussi un clic droit toutes les 12 min sans action. L'anti-AFK du launcher se met en pause pendant un captcha.
+- La macro prend la souris et le clavier : évite d'utiliser le PC pendant qu'elle tourne.
+- Ne réduis pas les fenêtres et garde des tailles proches de la normale. La détection supporte des fenêtres plus petites ou plus grandes.
+- Si un bouton n'est pas reconnu, utilise **Tester la détection** et envoie le résultat avec la capture.
+
 ## 7. Arrière-plan et icône ^
 | Action | Comment |
 |---|---|
 | Passer en arrière-plan | Bouton **Arrière-plan** : la fenêtre disparaît de la barre des tâches et va dans la zone ^ |
 | Rouvrir | Clic gauche sur l'icône dans la zone ^ |
-| Menu rapide | Clic droit sur l'icône : Ouvrir le launcher, Multi-instance activé, Fermer tous les Roblox, Économie, Paramètres, Raccourcis, Quitter |
+| Menu rapide | Clic droit sur l'icône : Ouvrir le launcher, Multi-instance activé, Fermer tous les Roblox, Économie, Paramètres, Macro Anime Adventures, Raccourcis, Quitter |
 | Quitter vraiment | Croix de la fenêtre, ou clic droit sur l'icône ^ → **Quitter** |
 
 ## 8. Écran d'accueil (GIF / vidéo)
@@ -208,7 +242,8 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 ## 13. Historique des versions
 | Version | Nouveautés |
 |---|---|
-| **1.9.0** | N'importe quel lien dans `source`, même Discord : un robot GitHub copie le média sur le dépôt pour qu'il n'expire jamais |
+| **2.0.0** | Macro Anime Adventures : boucle lobby → Play → Z → Find Match → captcha (manuel) → partie → Next → récompenses → Return to lobby, sur plusieurs fenêtres |
+| 1.9.0 | N'importe quel lien dans `source`, même Discord : un robot GitHub copie le média sur le dépôt pour qu'il n'expire jamais |
 | 1.8.2 | Si le nouvel écran d'accueil ne se télécharge pas, l'ancien n'est plus affiché à la place |
 | 1.8.1 | La croix d'un Roblox ferme vraiment son processus (détection de la fenêtre de jeu), compteur mis à jour tout de suite |
 | 1.8.0 | Clic droit sur les comptes : lancer et disposer les fenêtres (grille, côte à côte, lignes, cascade), ranger les Roblox déjà ouverts |
