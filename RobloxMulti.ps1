@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '2.0.2'
+$AppVersion = '2.0.3'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -3551,6 +3551,7 @@ namespace RML {
         }
 
         public static bool IsDown(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
+        public static bool IsForeground(IntPtr h) { return GetForegroundWindow() == h; }
     }
 }
 '@
@@ -4213,7 +4214,7 @@ function Send-CaptchaAlert($w) {
     if ($script:macro.Sound) { try { [System.Media.SystemSounds]::Exclamation.Play() } catch {} }
     try {
         $tray.ShowBalloonTip(6000, 'Captcha à remplir',
-            "$($w.Name) : tape le code dans la case, puis clique sur Submit.", [System.Windows.Forms.ToolTipIcon]::Warning)
+            "$($w.Name) : tape le code dans la case, puis appuie sur Entrée.", [System.Windows.Forms.ToolTipIcon]::Warning)
     } catch {}
 }
 
@@ -4298,12 +4299,15 @@ function Step-MacroWindow($w) {
                         $by = [int]($c.Y + 291 * ($shot.H / 1363.0) * $c.K)
                         [RML.MacroInput]::Click($w.Hwnd, $c.X, $by)
                         $w.LastInput = [DateTime]::UtcNow
+                        $w.EnterAt = $null
+                        $script:enterWasDown = $true   # ignore un Entrée déjà enfoncé
+                        $captchaKeyTimer.Start()        # surveille la touche Entrée
                         Send-CaptchaAlert $w
                     } elseif (($now - $w.AlertAt).TotalSeconds -ge 60) {
                         [RML.MacroInput]::Focus($w.Hwnd)
                         Send-CaptchaAlert $w
                     }
-                    $w.Info = 'CAPTCHA : tape le code puis clique Submit'
+                    $w.Info = 'CAPTCHA : tape le code puis appuie sur Entrée'
                 } else {
                     $w.Miss++
                     if ($w.Miss -ge 3) {
@@ -4390,6 +4394,40 @@ function Invoke-MacroTick {
     try { Step-MacroWindow $w } catch { $w.Info = "Erreur : $($_.Exception.Message)" } finally { $script:macroBusy = $false }
 }
 
+# Pendant un captcha : dès que tu appuies sur Entrée dans la fenêtre, on clique sur Submit
+$script:enterWasDown = $false
+function Watch-CaptchaEnter {
+    $m = $script:macro
+    $w = $m.Captcha
+    if (-not $m.Running -or -not $w) { $captchaKeyTimer.Stop(); return }
+    $down = [RML.MacroInput]::IsDown(0x0D)   # Entrée
+    if ($down -and -not $script:enterWasDown) {
+        $script:enterWasDown = $true
+        if ([RML.MacroInput]::IsForeground($w.Hwnd)) { $w.EnterAt = [DateTime]::UtcNow }
+    } elseif (-not $down) { $script:enterWasDown = $false }
+
+    # 250 ms après Entrée : si le captcha est toujours là, clic sur Submit
+    if ($w.EnterAt -and ([DateTime]::UtcNow - $w.EnterAt).TotalMilliseconds -ge 250) {
+        $w.EnterAt = $null
+        $shot = [RML.Vision]::Capture($w.Hwnd)
+        if (-not $shot) { return }
+        try {
+            $c = [RML.Vision]::Find($shot, 'captcha')
+            if ($c.Found) {
+                # Submit est sous le titre « Captcha », à gauche (mesuré sur la capture du jeu)
+                $k = ($shot.H / 1363.0) * $c.K
+                $script:macroBusy = $true
+                try { [RML.MacroInput]::Click($w.Hwnd, [int]($c.X - 216.5 * $k), [int]($c.Y + 397.5 * $k)) } finally { $script:macroBusy = $false }
+                $w.LastInput = [DateTime]::UtcNow
+                $w.Info = 'Submit cliqué'
+            }
+        } finally { $shot.Dispose() }
+    }
+}
+$captchaKeyTimer = New-Object System.Windows.Forms.Timer
+$captchaKeyTimer.Interval = 40
+$captchaKeyTimer.Add_Tick({ try { Watch-CaptchaEnter } catch {} })
+
 $macroTimer = New-Object System.Windows.Forms.Timer
 $macroTimer.Interval = 500
 $macroTimer.Add_Tick({ try { Invoke-MacroTick } catch {} })
@@ -4402,7 +4440,7 @@ function Start-Macro($wins) {
             Name = $x.Name; Hwnd = $x.Hwnd; Pid = $x.Pid; State = 'Detect'; Info = 'Démarrage...'
             Since = [DateTime]::UtcNow; LastAct = [DateTime]::MinValue; LastInput = [DateTime]::UtcNow
             LastCheck = [DateTime]::MinValue; LastZ = [DateTime]::MinValue; AlertAt = [DateTime]::MinValue
-            Clicks = 0; Cycles = 0; Miss = 0; LobbyAt = $null; Holding = $false; HoldKey = 0
+            Clicks = 0; Cycles = 0; Miss = 0; LobbyAt = $null; Holding = $false; HoldKey = 0; EnterAt = $null
         })
     }
     $m.Idx = -1; $m.Captcha = $null; $m.Exclusive = $null; $m.Running = $true
@@ -4414,6 +4452,7 @@ function Stop-Macro($why) {
     $m = $script:macro
     $m.Running = $false; $m.Captcha = $null
     $macroTimer.Stop()
+    $captchaKeyTimer.Stop()
     foreach ($w in $m.Windows) { Stop-MHold $w }
     $m.Exclusive = $null
     foreach ($w in $m.Windows) { $w.Info = $why }
@@ -4477,7 +4516,7 @@ function Show-MacroWindow {
 
     $note = New-Object System.Windows.Forms.Label
     $note.ForeColor = [System.Drawing.Color]::Gray
-    $note.Text = "• Le captcha, c'est toi qui le tapes : la fenêtre passe devant avec un son, le curseur est dans la case.`r`n" +
+    $note.Text = "• Captcha : la fenêtre passe devant avec un son, le curseur est dans la case. Tape le code puis Entrée.`r`n" +
                  "• La macro prend la souris et le clavier : évite d'utiliser le PC pendant qu'elle tourne.`r`n" +
                  "• Ne réduis pas les fenêtres et garde-les à peu près à la même taille.`r`n" +
                  "• F8 (n'importe où) arrête la macro. Fermer cette fenêtre ne l'arrête pas."

@@ -1,6 +1,6 @@
 # Roblox Multi Launcher : fiche des fonctionnalités
 
-**Version actuelle : v2.0.2**. Cette fiche est mise à jour à chaque nouvelle version.
+**Version actuelle : v2.0.3**. Cette fiche est mise à jour à chaque nouvelle version.
 
 ## Sommaire
 1. [Multi-instance](#1-multi-instance)
@@ -137,7 +137,7 @@ S'ouvre avec le lien **Macro Anime Adventures** en bas du launcher, avec un clic
 2. Clique sur **Play**
 3. Garde **Z enfoncé** pour faire avancer le perso (la touche marquée Z sur **ton** clavier, AZERTY compris, modifiable) jusqu'à ce que « Join Matchmaking » apparaisse. Pendant ce temps, la macro reste sur cette fenêtre
 4. Clique sur **Find Match**
-5. **Captcha** : la fenêtre passe devant avec un son et une notification, le curseur est dans la case. **C'est toi qui tapes le code** puis cliques **Submit**
+5. **Captcha** : la fenêtre passe devant avec un son et une notification, le curseur est dans la case. **Tu tapes juste les chiffres puis Entrée** : la macro clique sur **Submit** pour toi
 6. Attend la fin de la partie (**sans limite de temps**), victoire ou défaite
 7. Clique sur **Next**, puis fait les clics pour les récompenses (5 par défaut)
 8. Clique sur **Return to lobby**, attend le chargement du lobby, et recommence
@@ -243,7 +243,8 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 ## 13. Historique des versions
 | Version | Nouveautés |
 |---|---|
-| **2.0.2** | Macro : Z gardé enfoncé (le perso avance en continu) jusqu'au matchmaking |
+| **2.0.3** | Macro : au captcha, tape les chiffres puis Entrée, la macro clique sur Submit |
+| 2.0.2 | Macro : Z gardé enfoncé (le perso avance en continu) jusqu'au matchmaking |
 | 2.0.1 | Macro : la touche Z suit la disposition du clavier (AZERTY), touche modifiable |
 | 2.0.0 | Macro Anime Adventures : boucle lobby → Play → Z → Find Match → captcha (manuel) → partie → Next → récompenses → Return to lobby, sur plusieurs fenêtres |
 | 1.9.0 | N'importe quel lien dans `source`, même Discord : un robot GitHub copie le média sur le dépôt pour qu'il n'expire jamais |
