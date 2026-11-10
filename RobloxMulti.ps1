@@ -58,7 +58,7 @@ trap { Show-Error $_; continue }
 
 # ============================================================ mises à jour
 # Version de CE fichier. Augmente-la à chaque fois que tu publies une mise à jour.
-$AppVersion = '2.0.0'
+$AppVersion = '2.0.1'
 # Ton dépôt GitHub (pseudo/nom-du-depot). Laisse vide pour désactiver les mises à jour.
 $GitHubRepo   = 'aotawl/RobloxMulti'
 $GitHubBranch = 'main'
@@ -3471,6 +3471,8 @@ namespace RML {
         [DllImport("user32.dll")] static extern void mouse_event(uint f, int dx, int dy, uint d, IntPtr e);
         [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint f, IntPtr e);
         [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern short VkKeyScan(char ch);
+        [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint mapType);
 
         public static void Focus(IntPtr h) {
             if (Vision.IsIconic(h)) { ShowWindow(h, 9); Thread.Sleep(350); }
@@ -3511,6 +3513,16 @@ namespace RML {
                 mouse_event(0x0008, 0, 0, 0, IntPtr.Zero); Thread.Sleep(60);
                 mouse_event(0x0010, 0, 0, 0, IntPtr.Zero); Thread.Sleep(60);
             } finally { Vision.DpiOff(old); }
+        }
+
+        // Appuie sur la touche marquée de ce caractère sur le clavier du PC (gère AZERTY / QWERTY...)
+        public static bool KeyChar(IntPtr h, char c) {
+            short r = VkKeyScan(char.ToLowerInvariant(c));
+            if (r == -1) return false;
+            byte vk = (byte)(r & 0xFF);
+            byte scan = (byte)MapVirtualKey(vk, 0);   // MAPVK_VK_TO_VSC selon la disposition du clavier
+            Key(h, vk, scan);
+            return true;
         }
 
         public static void Key(IntPtr h, byte vk, byte scan) {
@@ -4122,7 +4134,7 @@ S4qCQtv/AAAAAElFTkSuQmCC
 '@ }
 )
 
-$script:macro = @{ Running = $false; Windows = (New-Object System.Collections.ArrayList); Idx = -1; Captcha = $null; RewardClicks = 5; Sound = $true }
+$script:macro = @{ Running = $false; Windows = (New-Object System.Collections.ArrayList); Idx = -1; Captcha = $null; RewardClicks = 5; Sound = $true; Key = 'Z' }
 $script:macroBusy = $false
 $script:macroForm = $null
 
@@ -4213,7 +4225,7 @@ function Step-MacroWindow($w) {
                 if ($lb.Found -and $pl.Found) {
                     Invoke-MClick $w $pl
                     $w.LastZ = [DateTime]::MinValue
-                    Set-MState $w 'Matchmaking' 'Play cliqué : appui sur Z...'
+                    Set-MState $w 'Matchmaking' "Play cliqué : appui sur $($m.Key)..."
                     break
                 }
                 $w.Info = 'Attente du lobby...'
@@ -4224,10 +4236,11 @@ function Step-MacroWindow($w) {
                 $fd = [RML.Vision]::Find($shot, 'find')
                 if ($fd.Found) { Invoke-MClick $w $fd; Set-MState $w 'WaitCaptcha' 'Find Match cliqué'; break }
                 if (($now - $w.LastZ).TotalSeconds -ge 1.2) {
-                    [RML.MacroInput]::Key($w.Hwnd, 0x5A, 0x2C)   # touche Z
+                    # la touche marquée « Z » (ou autre) sur TON clavier, AZERTY compris
+                    if (-not [RML.MacroInput]::KeyChar($w.Hwnd, [char]"$($m.Key)"[0])) { [RML.MacroInput]::Key($w.Hwnd, 0x5A, 0x11) }
                     $w.LastZ = $now; $w.LastInput = $now
                 }
-                $w.Info = "Appui sur Z ($([int]$el) s)..."
+                $w.Info = "Appui sur $($m.Key) ($([int]$el) s)..."
                 if ($el -gt 90) { Set-MState $w 'Lobby' 'Pas de matchmaking : je réessaie Play' }
             }
             'WaitCaptcha' {
@@ -4396,13 +4409,20 @@ function Show-MacroWindow {
     $bTest.Text = 'Tester la détection'; $bTest.SetBounds(320, 98, 118, 32); $f.Controls.Add($bTest)
 
     $l2 = New-Object System.Windows.Forms.Label
-    $l2.Text = 'Clics pour les récompenses :'; $l2.SetBounds(12, 143, 165, 20); $f.Controls.Add($l2)
+    $l2.Text = 'Clics récompenses :'; $l2.SetBounds(12, 143, 118, 20); $f.Controls.Add($l2)
     $num = New-Object System.Windows.Forms.NumericUpDown
     $num.Minimum = 0; $num.Maximum = 10; $num.Value = $script:macro.RewardClicks
-    $num.SetBounds(180, 140, 50, 24); $f.Controls.Add($num)
+    $num.SetBounds(130, 140, 45, 24); $f.Controls.Add($num)
+    $lK = New-Object System.Windows.Forms.Label
+    $lK.Text = 'Touche :'; $lK.SetBounds(186, 143, 52, 20); $f.Controls.Add($lK)
+    $txtK = New-Object System.Windows.Forms.TextBox
+    $txtK.MaxLength = 1; $txtK.Text = $script:macro.Key; $txtK.TextAlign = 'Center'
+    $txtK.SetBounds(238, 140, 28, 24); $f.Controls.Add($txtK)
+    $tipK = New-Object System.Windows.Forms.ToolTip
+    $tipK.SetToolTip($txtK, "La touche à appuyer pour ouvrir le matchmaking, telle qu'elle est écrite sur ton clavier (AZERTY ou QWERTY).")
     $cbS = New-Object System.Windows.Forms.CheckBox
-    $cbS.Text = 'Son quand un captcha arrive'; $cbS.Checked = $script:macro.Sound
-    $cbS.SetBounds(245, 141, 200, 22); $f.Controls.Add($cbS)
+    $cbS.Text = 'Son au captcha'; $cbS.Checked = $script:macro.Sound
+    $cbS.SetBounds(280, 141, 160, 22); $f.Controls.Add($cbS)
 
     $bStart = New-Object System.Windows.Forms.Button
     $bStart.Text = 'Démarrer'
@@ -4425,7 +4445,7 @@ function Show-MacroWindow {
     $note.SetBounds(12, 378, 430, 88); $f.Controls.Add($note)
 
     # les boutons s'exécutent après la fin de cette fonction : on garde les contrôles en script:
-    $script:mui = @{ f = $f; clb = $clb; num = $num; cbS = $cbS; lv = $lv; bStart = $bStart; bStop = $bStop }
+    $script:mui = @{ f = $f; clb = $clb; num = $num; cbS = $cbS; txtK = $txtK; lv = $lv; bStart = $bStart; bStop = $bStop }
     $script:mui.refresh = {
         $script:mui.clb.Items.Clear()
         $script:macroWinList = @(Get-RobloxWindows)
@@ -4463,11 +4483,14 @@ function Show-MacroWindow {
             for ($i = 0; $i -lt @($script:macroWinList).Count; $i++) { if ($script:mui.clb.GetItemChecked($i)) { $sel += $script:macroWinList[$i] } }
             if ($sel.Count -eq 0) { [void](Show-Msg 'Coche au moins une fenêtre Roblox.' 'Macro'); return }
             $script:macro.RewardClicks = [int]$script:mui.num.Value
+            $k = "$($script:mui.txtK.Text)".Trim()
+            $script:macro.Key = if ($k) { $k.Substring(0, 1).ToUpper() } else { 'Z' }
             $script:macro.Sound = $script:mui.cbS.Checked
             Start-Macro $sel
         } catch { Show-Error $_ }
     })
     $script:mui.bStop.Add_Click({ Stop-Macro 'Arrêtée' })
+    $script:mui.txtK.Add_TextChanged({ $k = "$($script:mui.txtK.Text)".Trim(); if ($k) { $script:macro.Key = $k.Substring(0, 1).ToUpper() } })
     $script:mui.num.Add_ValueChanged({ $script:macro.RewardClicks = [int]$script:mui.num.Value })
     $script:mui.cbS.Add_CheckedChanged({ $script:macro.Sound = $script:mui.cbS.Checked })
 

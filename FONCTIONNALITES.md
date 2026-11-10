@@ -1,6 +1,6 @@
 # Roblox Multi Launcher : fiche des fonctionnalités
 
-**Version actuelle : v2.0.0**. Cette fiche est mise à jour à chaque nouvelle version.
+**Version actuelle : v2.0.1**. Cette fiche est mise à jour à chaque nouvelle version.
 
 ## Sommaire
 1. [Multi-instance](#1-multi-instance)
@@ -135,7 +135,7 @@ S'ouvre avec le lien **Macro Anime Adventures** en bas du launcher, avec un clic
 **Le cycle** (recommence tout seul) :
 1. Attend que le **lobby** soit chargé
 2. Clique sur **Play**
-3. Appuie sur **Z** jusqu'à ce que « Join Matchmaking » apparaisse
+3. Appuie sur **Z** (la touche marquée Z sur **ton** clavier, AZERTY compris, modifiable) jusqu'à ce que « Join Matchmaking » apparaisse
 4. Clique sur **Find Match**
 5. **Captcha** : la fenêtre passe devant avec un son et une notification, le curseur est dans la case. **C'est toi qui tapes le code** puis cliques **Submit**
 6. Attend la fin de la partie (**sans limite de temps**), victoire ou défaite
@@ -148,6 +148,7 @@ S'ouvre avec le lien **Macro Anime Adventures** en bas du launcher, avec un clic
 | Retrouver une fenêtre | Sélectionne-la → **Montrer** |
 | Vérifier que la macro voit bien l'écran | Sélectionne une fenêtre → **Tester la détection** : affiche ce qui est reconnu, et enregistre une capture `macro_capture.png` sur le Bureau |
 | Nombre de clics de récompense | De 0 à 10 (5 par défaut) |
+| Changer la touche | Case **Touche** : mets la lettre telle qu'elle est écrite sur ton clavier (Z par défaut) |
 | Son du captcha | Case **Son quand un captcha arrive** |
 | Démarrer | Bouton **Démarrer** |
 | Arrêter | Bouton **Arrêter**, ou touche **F8** n'importe où |
@@ -242,7 +243,8 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 ## 13. Historique des versions
 | Version | Nouveautés |
 |---|---|
-| **2.0.0** | Macro Anime Adventures : boucle lobby → Play → Z → Find Match → captcha (manuel) → partie → Next → récompenses → Return to lobby, sur plusieurs fenêtres |
+| **2.0.1** | Macro : la touche Z suit la disposition du clavier (AZERTY), touche modifiable |
+| 2.0.0 | Macro Anime Adventures : boucle lobby → Play → Z → Find Match → captcha (manuel) → partie → Next → récompenses → Return to lobby, sur plusieurs fenêtres |
 | 1.9.0 | N'importe quel lien dans `source`, même Discord : un robot GitHub copie le média sur le dépôt pour qu'il n'expire jamais |
 | 1.8.2 | Si le nouvel écran d'accueil ne se télécharge pas, l'ancien n'est plus affiché à la place |
 | 1.8.1 | La croix d'un Roblox ferme vraiment son processus (détection de la fenêtre de jeu), compteur mis à jour tout de suite |
