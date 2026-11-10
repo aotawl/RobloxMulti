@@ -1,6 +1,6 @@
 # Roblox Multi Launcher : fiche des fonctionnalités
 
-**Version actuelle : v2.1.0**. Cette fiche est mise à jour à chaque nouvelle version.
+**Version actuelle : v2.1.1**. Cette fiche est mise à jour à chaque nouvelle version.
 
 ## Sommaire
 1. [Multi-instance](#1-multi-instance)
@@ -146,6 +146,8 @@ S'ouvre avec le lien **Macro Anime Adventures** en bas du launcher, avec un clic
 8. Clique sur **Next**, puis fait les clics pour les récompenses (5 par défaut)
 9. Clique sur **Return to lobby**, attend le chargement du lobby, et recommence
 
+Si aucun match n'est trouvé (encore au lobby après 5 min) ou si « Join Matchmaking » n'apparaît pas, la macro **ferme d'abord les fenêtres restées ouvertes** (Join Matchmaking, Captcha) avec leur **croix rouge**, puis relance depuis Play.
+
 **Placement des persos** (une fois par partie, dès que le perso est sur la map) :
 1. Appuie sur **F** pour ouvrir l'**Unit Overview** et compte les persos déjà posés (un bouton bleu « First » par perso)
 2. **Dézoome à la molette** et tourne la **caméra vers le sol** (clic droit maintenu en glissant)
@@ -261,7 +263,8 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 ## 13. Historique des versions
 | Version | Nouveautés |
 |---|---|
-| **2.1.0** | Macro : placement automatique des persos (F, dézoom, caméra vers le sol, touche 2 + clic, comptage dans l'Unit Overview, déplacement ZQSD si besoin) |
+| **2.1.1** | Macro : avant de relancer, ferme les fenêtres restées ouvertes (croix rouge de Join Matchmaking / Captcha) |
+| 2.1.0 | Macro : placement automatique des persos (F, dézoom, caméra vers le sol, touche 2 + clic, comptage dans l'Unit Overview, déplacement ZQSD si besoin) |
 | 2.0.7 | Anti-AFK corrigé : Roblox laissé au premier plan protégé, clics de l'appli pas comptés comme ton activité, bonne fenêtre visée, passage au premier plan vérifié (plein écran), actif aussi pendant un captcha de la macro |
 | 2.0.6 | Macro : Entrée au captcha détecté de façon fiable (surveillance toutes les 5 ms), Submit recliqué une fois si besoin, reprise immédiate des autres comptes |
 | 2.0.5 | Macro : au captcha, la fenêtre clignote dans la barre des tâches et F5 est appuyé (option) |
