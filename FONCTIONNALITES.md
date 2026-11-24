@@ -1,6 +1,6 @@
 # Roblox Multi Launcher : fiche des fonctionnalités
 
-**Version actuelle : v2.1.1**. Cette fiche est mise à jour à chaque nouvelle version.
+**Version actuelle : v2.2.0**. Cette fiche est mise à jour à chaque nouvelle version.
 
 ## Sommaire
 1. [Multi-instance](#1-multi-instance)
@@ -137,7 +137,7 @@ S'ouvre avec le lien **Macro Anime Adventures** en bas du launcher, avec un clic
 
 **Le cycle** (recommence tout seul) :
 1. Attend que le **lobby** soit chargé
-2. Clique sur **Play**
+2. Clique sur **Play**, puis choisit le mode dans « **Where do you want to Play?** » (**Summer Event** par défaut)
 3. Garde **Z enfoncé** pour faire avancer le perso (la touche marquée Z sur **ton** clavier, AZERTY compris, modifiable) jusqu'à ce que « Join Matchmaking » apparaisse. Pendant ce temps, la macro reste sur cette fenêtre
 4. Clique sur **Find Match**
 5. **Captcha** : notification avec son, la fenêtre **clignote dans la barre des tâches**, la macro appuie sur **F5** (option), puis la fenêtre passe devant avec le curseur dans la case. **Tu tapes juste les chiffres puis Entrée** : la macro clique sur **Submit** pour toi
@@ -163,6 +163,7 @@ Pendant le placement, la macro reste sur cette fenêtre. Ça prend environ 1 min
 | Activer / désactiver le placement | Case **Placer des persos** (cochée par défaut) |
 | Touche du perso | Case **touche** : le chiffre de la barre des persos (2 par défaut) |
 | Nombre de persos | Case **nombre** : de 1 à 6 (2 par défaut) |
+| Mode de jeu | Liste à côté : **Summer Event** (par défaut), **Misty Village** ou **Regular Stages**. C'est le choix fait après Play |
 | Choisir les fenêtres | Coche les fenêtres Roblox dans la liste (**Rafraîchir** si tu viens d'en ouvrir) |
 | Retrouver une fenêtre | Sélectionne-la → **Montrer** |
 | Vérifier que la macro voit bien l'écran | Sélectionne une fenêtre → **Tester la détection** : affiche ce qui est reconnu, et enregistre une capture `macro_capture.png` sur le Bureau |
@@ -263,7 +264,8 @@ Le propriétaire du dépôt le choisit pour **tout le monde**, dans `splash.json
 ## 13. Historique des versions
 | Version | Nouveautés |
 |---|---|
-| **2.1.1** | Macro : avant de relancer, ferme les fenêtres restées ouvertes (croix rouge de Join Matchmaking / Captcha) |
+| **2.2.0** | Macro : après Play, choisit le mode dans « Where do you want to Play? » (Summer Event par défaut, réglable) |
+| 2.1.1 | Macro : avant de relancer, ferme les fenêtres restées ouvertes (croix rouge de Join Matchmaking / Captcha) |
 | 2.1.0 | Macro : placement automatique des persos (F, dézoom, caméra vers le sol, touche 2 + clic, comptage dans l'Unit Overview, déplacement ZQSD si besoin) |
 | 2.0.7 | Anti-AFK corrigé : Roblox laissé au premier plan protégé, clics de l'appli pas comptés comme ton activité, bonne fenêtre visée, passage au premier plan vérifié (plein écran), actif aussi pendant un captcha de la macro |
 | 2.0.6 | Macro : Entrée au captcha détecté de façon fiable (surveillance toutes les 5 ms), Submit recliqué une fois si besoin, reprise immédiate des autres comptes |
